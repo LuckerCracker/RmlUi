@@ -242,6 +242,9 @@ void RenderManager::Render(const Geometry& geometry, Vector2f translation, Textu
 	RMLUI_ASSERT(geometry);
 	RMLUI_ASSERTMSG(translation == translation.Round(), "RenderManager::Render expects translation to be rounded");
 
+	if (state.scissor_region.Valid() && (state.scissor_region.Width() <= 0 || state.scissor_region.Height() <= 0))
+		return;
+
 	if (geometry.render_manager != this || (shader && shader.render_manager != this) || (texture && texture.render_manager != this))
 	{
 		RMLUI_ERRORMSG("Trying to render geometry with resources constructed in different render managers.");

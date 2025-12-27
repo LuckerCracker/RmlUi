@@ -225,6 +225,35 @@ void Element::Render()
 	// Apply our transform
 	ElementUtilities::ApplyTransform(*this);
 
+	if (Context* context = GetContext())
+	{
+		const ComputedValues& computed = GetComputedValues();
+		const bool has_transform = (GetTransformState() != nullptr);
+		const bool may_draw_outside_bbox = (computed.has_filter() || computed.has_backdrop_filter() || computed.has_mask_image() ||
+			computed.has_box_shadow() || has_transform);
+
+		Rectanglei clip_region;
+		ClipMaskGeometryList clip_mask_list;
+		const bool scissoring_enabled = ElementUtilities::GetClippingRegion(this, clip_region, &clip_mask_list);
+		const bool is_text_node = (GetTagName() == "#text");
+		if (scissoring_enabled && !may_draw_outside_bbox && !is_text_node)
+		{
+			RenderManager& render_manager = context->GetRenderManager();
+			Rectanglei scissor = clip_region.Intersect(Rectanglei::FromSize(render_manager.GetViewport()));
+			if (scissor.Valid())
+			{
+				const Rectanglef bbox_f = Rectanglef::FromPositionSize(GetAbsoluteOffset(BoxArea::Border), GetBox().GetSize(BoxArea::Border));
+				const Rectanglei bbox_i = static_cast<Rectanglei>(bbox_f).Extend(2);
+				if (!bbox_i.Intersects(scissor))
+					return;
+			}
+			else
+			{
+				return;
+			}
+		}
+	}
+
 	meta->effects.RenderEffects(RenderStage::Enter);
 
 	// Set up the clipping region for this element.

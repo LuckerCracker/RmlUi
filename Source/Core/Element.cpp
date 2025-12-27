@@ -227,8 +227,14 @@ void Element::Render()
 
 	if (Context* context = GetContext())
 	{
-		const Rectanglei scissor = context->GetRenderManager().GetScissorRegion();
-		if (scissor.Valid())
+		RenderManager& render_manager = context->GetRenderManager();
+		Rectanglei cull_scissor = Rectanglei::FromSize(render_manager.GetViewport());
+
+		Rectanglei clip_region;
+		if (ElementUtilities::GetClippingRegion(this, clip_region, nullptr))
+			cull_scissor = clip_region.Intersect(cull_scissor);
+
+		if (cull_scissor.Valid())
 		{
 			const ComputedValues& computed = GetComputedValues();
 			const bool has_transform = (GetTransformState() != nullptr);
@@ -247,7 +253,7 @@ void Element::Render()
 				Rectanglef bbox;
 				if (ElementUtilities::GetBoundingBox(bbox, this, BoxArea::Auto))
 				{
-					const Rectanglef scissor_f = static_cast<Rectanglef>(scissor);
+					const Rectanglef scissor_f = static_cast<Rectanglef>(cull_scissor);
 					if (!bbox.Intersects(scissor_f))
 						return;
 				}

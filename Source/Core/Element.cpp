@@ -227,29 +227,30 @@ void Element::Render()
 
 	if (Context* context = GetContext())
 	{
-		const ComputedValues& computed = GetComputedValues();
-		const bool has_transform = (GetTransformState() != nullptr);
-		const bool may_draw_outside_bbox = (computed.has_filter() || computed.has_backdrop_filter() || computed.has_mask_image() ||
-			computed.has_box_shadow() || has_transform);
-
-		Rectanglei clip_region;
-		ClipMaskGeometryList clip_mask_list;
-		const bool scissoring_enabled = ElementUtilities::GetClippingRegion(this, clip_region, &clip_mask_list);
-		const bool is_text_node = (GetTagName() == "#text");
-		if (scissoring_enabled && !may_draw_outside_bbox && !is_text_node)
+		const Rectanglei scissor = context->GetRenderManager().GetScissorRegion();
+		if (scissor.Valid())
 		{
-			RenderManager& render_manager = context->GetRenderManager();
-			Rectanglei scissor = clip_region.Intersect(Rectanglei::FromSize(render_manager.GetViewport()));
-			if (scissor.Valid())
+			const ComputedValues& computed = GetComputedValues();
+			const bool has_transform = (GetTransformState() != nullptr);
+			const bool may_draw_outside_bbox = (computed.has_filter() || computed.has_backdrop_filter() || computed.has_mask_image() ||
+				computed.has_box_shadow() || has_transform);
+			const bool is_text_node = (GetTagName() == "#text");
+
+			const Style::Clip::Type clip_type = computed.clip().GetType();
+			const bool clip_forces = (clip_type == Style::Clip::Type::Always || clip_type == Style::Clip::Type::Number);
+			const bool overflow_clips =
+				(computed.overflow_x() != Style::Overflow::Visible || computed.overflow_y() != Style::Overflow::Visible || clip_forces);
+			const bool can_cull_children = (overflow_clips || children.empty());
+
+			if (can_cull_children && !may_draw_outside_bbox && !is_text_node)
 			{
-				const Rectanglef bbox_f = Rectanglef::FromPositionSize(GetAbsoluteOffset(BoxArea::Border), GetBox().GetSize(BoxArea::Border));
-				const Rectanglei bbox_i = static_cast<Rectanglei>(bbox_f).Extend(2);
-				if (!bbox_i.Intersects(scissor))
-					return;
-			}
-			else
-			{
-				return;
+				Rectanglef bbox;
+				if (ElementUtilities::GetBoundingBox(bbox, this, BoxArea::Auto))
+				{
+					const Rectanglef scissor_f = static_cast<Rectanglef>(scissor);
+					if (!bbox.Intersects(scissor_f))
+						return;
+				}
 			}
 		}
 	}

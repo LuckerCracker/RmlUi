@@ -321,6 +321,13 @@ public:
 	/// as fast as possible", for example if an animation is playing.
 	/// @return Time until the next update is expected.
 	double GetNextUpdateDelay() const;
+	/// Returns the unioned damage rectangle in screen coordinates, if any.
+	/// @param[out] out_rect The unioned damage rectangle if any damage is present.
+	/// @param[out] out_full True if full damage was reported for the context.
+	/// @return True if any damage was reported, otherwise false.
+	bool GetDamageRect(Rectanglei& out_rect, bool& out_full) const;
+	/// Clears the current damage flags for the context (does not clear tracked element bounds).
+	void ClearDamage();
 
 protected:
 	void Release() override;

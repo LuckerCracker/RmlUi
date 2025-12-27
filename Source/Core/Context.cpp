@@ -39,6 +39,7 @@
 #include "../../Include/RmlUi/Core/RenderManager.h"
 #include "../../Include/RmlUi/Core/StreamMemory.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+#include "DamageTracker.h"
 #include "DataModel.h"
 #include "EventDispatcher.h"
 #include "PluginRegistry.h"
@@ -1650,6 +1651,26 @@ void Context::RequestNextUpdate(double delay)
 double Context::GetNextUpdateDelay() const
 {
 	return next_update_timeout;
+}
+
+bool Context::GetDamageRect(Rectanglei& out_rect, bool& out_full) const
+{
+	const DamageInfo info = DamageTracker::PeekDamage(const_cast<Context*>(this));
+	if (!info.has_damage)
+	{
+		out_full = false;
+		out_rect = Rectanglei::MakeInvalid();
+		return false;
+	}
+
+	out_full = info.full_damage;
+	out_rect = info.union_rect;
+	return true;
+}
+
+void Context::ClearDamage()
+{
+	DamageTracker::ClearDamage(this);
 }
 
 } // namespace Rml

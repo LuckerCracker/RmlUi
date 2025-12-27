@@ -25,6 +25,8 @@ add_library(rmlui_core
 	DataController.h
 	DataControllerDefault.cpp
 	DataControllerDefault.h
+	DamageTracker.cpp
+	DamageTracker.h
 	DataExpression.cpp
 	DataExpression.h
 	DataModel.cpp

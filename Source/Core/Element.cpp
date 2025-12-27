@@ -122,6 +122,12 @@ Element::~Element()
 {
 	RMLUI_ASSERT(parent == nullptr);
 
+	if (Context* ctx = GetContext())
+	{
+		DamageTracker::MarkOldBBox(ctx, this);
+		DamageTracker::Unregister(ctx, this);
+	}
+
 	PluginRegistry::NotifyElementDestroy(this);
 
 	// A simplified version of RemoveChild() for destruction.
@@ -231,6 +237,15 @@ void Element::Render()
 			RMLUI_ZoneScopedNC("OnRender", 0x228B22);
 
 			OnRender();
+		}
+
+		Rectanglef bb_f;
+		if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+		{
+			Math::ExpandToPixelGrid(bb_f);
+			const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
+			if (Context* ctx = GetContext())
+				DamageTracker::UpdateRenderedBBox(ctx, this, bb_i);
 		}
 	}
 

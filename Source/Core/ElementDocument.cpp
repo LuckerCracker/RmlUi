@@ -34,6 +34,7 @@
 #include "../../Include/RmlUi/Core/StreamMemory.h"
 #include "../../Include/RmlUi/Core/StyleSheet.h"
 #include "../../Include/RmlUi/Core/StyleSheetContainer.h"
+#include "DamageTracker.h"
 #include "DocumentHeader.h"
 #include "ElementStyle.h"
 #include "EventDispatcher.h"
@@ -579,11 +580,21 @@ void ElementDocument::UpdatePosition()
 void ElementDocument::DirtyPosition()
 {
 	position_dirty = true;
+	if (Context* context = GetContext())
+	{
+		DamageTracker::MarkFull(context);
+		context->RequestNextUpdate(0);
+	}
 }
 
 void ElementDocument::DirtyLayout()
 {
 	layout_dirty = true;
+	if (Context* context = GetContext())
+	{
+		DamageTracker::MarkFull(context);
+		context->RequestNextUpdate(0);
+	}
 }
 
 bool ElementDocument::IsLayoutDirty()

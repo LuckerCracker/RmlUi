@@ -159,6 +159,8 @@ void Context::SetDimensions(const Vector2i _dimensions)
 		render_manager->SetViewport(dimensions);
 		root->SetBox(Box(Vector2f(dimensions)));
 		root->DirtyLayout();
+		DamageTracker::MarkFull(this);
+		RequestNextUpdate(0);
 
 		for (int i = 0; i < root->GetNumChildren(); ++i)
 		{
@@ -185,6 +187,8 @@ void Context::SetDensityIndependentPixelRatio(float dp_ratio)
 	if (density_independent_pixel_ratio != dp_ratio)
 	{
 		density_independent_pixel_ratio = dp_ratio;
+		DamageTracker::MarkFull(this);
+		RequestNextUpdate(0);
 
 		for (int i = 0; i < root->GetNumChildren(true); ++i)
 		{

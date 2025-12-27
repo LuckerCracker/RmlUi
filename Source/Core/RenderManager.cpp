@@ -181,6 +181,9 @@ void RenderManager::SetTransform(const Matrix4f* p_new_transform)
 
 void RenderManager::ApplyClipMask(const ClipMaskGeometryList& clip_elements)
 {
+	if (state.scissor_region.Valid() && (state.scissor_region.Width() <= 0 || state.scissor_region.Height() <= 0))
+		return;
+
 	const bool clip_mask_enabled = !clip_elements.empty();
 	render_interface->EnableClipMask(clip_mask_enabled);
 

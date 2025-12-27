@@ -52,6 +52,7 @@
 #include "ElementEffects.h"
 #include "ElementMeta.h"
 #include "ElementStyle.h"
+#include "DamageTracker.h"
 #include "EventDispatcher.h"
 #include "EventSpecification.h"
 #include "Layout/LayoutEngine.h"
@@ -1794,17 +1795,19 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		changed_properties.Contains(PropertyId::Bottom) || //
 		changed_properties.Contains(PropertyId::Left)      //
 	);
+	const PropertyIdSet changed_properties_forcing_layout =
+		(changed_properties & StyleSheetSpecification::GetRegisteredPropertiesForcingLayout());
+	const bool properties_force_layout = !changed_properties_forcing_layout.Empty();
+	bool layout_affecting = false;
 
 	// See if the document layout needs to be updated.
 	if (!IsLayoutDirty())
 	{
 		// Force a relayout if any of the changed properties require it.
-		const PropertyIdSet changed_properties_forcing_layout =
-			(changed_properties & StyleSheetSpecification::GetRegisteredPropertiesForcingLayout());
-
-		if (!changed_properties_forcing_layout.Empty())
+		if (properties_force_layout)
 		{
 			DirtyLayout();
+			layout_affecting = true;
 		}
 		else if (top_right_bottom_left_changed)
 		{
@@ -1820,8 +1823,28 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 				(computed.height().type == Height::Auto && computed.top().type != Top::Auto && computed.bottom().type != Bottom::Auto);
 
 			if (absolutely_positioned && (sized_width || sized_height))
+			{
 				DirtyLayout();
+				layout_affecting = true;
+			}
 		}
+	}
+	else if (properties_force_layout)
+	{
+		layout_affecting = true;
+	}
+	else if (top_right_bottom_left_changed)
+	{
+		using namespace Style;
+		const ComputedValues& computed = GetComputedValues();
+		const bool absolutely_positioned = (computed.position() == Position::Absolute || computed.position() == Position::Fixed);
+		const bool sized_width =
+			(computed.width().type == Width::Auto && computed.left().type != Left::Auto && computed.right().type != Right::Auto);
+		const bool sized_height =
+			(computed.height().type == Height::Auto && computed.top().type != Top::Auto && computed.bottom().type != Bottom::Auto);
+
+		if (absolutely_positioned && (sized_width || sized_height))
+			layout_affecting = true;
 	}
 
 	// Update the position.
@@ -1884,6 +1907,49 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 			// When our z-index or local stacking context changes, then we must dirty our parent stacking context so we are re-indexed.
 			if (parent)
 				parent->DirtyStackingContext();
+		}
+	}
+
+	const bool paint_affecting = (                                    //
+		changed_properties.Contains(PropertyId::Opacity) ||           //
+		changed_properties.Contains(PropertyId::Transform) ||         //
+		changed_properties.Contains(PropertyId::TransformOriginX) ||  //
+		changed_properties.Contains(PropertyId::TransformOriginY) ||  //
+		changed_properties.Contains(PropertyId::TransformOriginZ) ||  //
+		changed_properties.Contains(PropertyId::Perspective) ||       //
+		changed_properties.Contains(PropertyId::PerspectiveOriginX) || //
+		changed_properties.Contains(PropertyId::PerspectiveOriginY) || //
+		changed_properties.Contains(PropertyId::Color) ||             //
+		changed_properties.Contains(PropertyId::CaretColor) ||        //
+		changed_properties.Contains(PropertyId::BackgroundColor) ||   //
+		changed_properties.Contains(PropertyId::ImageColor) ||        //
+		changed_properties.Contains(PropertyId::FillImage) ||         //
+		changed_properties.Contains(PropertyId::BorderTopWidth) ||    //
+		changed_properties.Contains(PropertyId::BorderRightWidth) ||  //
+		changed_properties.Contains(PropertyId::BorderBottomWidth) || //
+		changed_properties.Contains(PropertyId::BorderLeftWidth) ||   //
+		changed_properties.Contains(PropertyId::BorderTopColor) ||    //
+		changed_properties.Contains(PropertyId::BorderRightColor) ||  //
+		changed_properties.Contains(PropertyId::BorderBottomColor) || //
+		changed_properties.Contains(PropertyId::BorderLeftColor) ||   //
+		changed_properties.Contains(PropertyId::BorderTopLeftRadius) || //
+		changed_properties.Contains(PropertyId::BorderTopRightRadius) || //
+		changed_properties.Contains(PropertyId::BorderBottomRightRadius) || //
+		changed_properties.Contains(PropertyId::BorderBottomLeftRadius) || //
+		changed_properties.Contains(PropertyId::BoxShadow) ||          //
+		changed_properties.Contains(PropertyId::Filter) ||             //
+		changed_properties.Contains(PropertyId::BackdropFilter) ||     //
+		changed_properties.Contains(PropertyId::MaskImage) ||          //
+		changed_properties.Contains(PropertyId::Decorator) ||          //
+		changed_properties.Contains(PropertyId::FontEffect) ||         //
+		changed_properties.Contains(PropertyId::Visibility));
+
+	if (paint_affecting && !layout_affecting)
+	{
+		if (Context* ctx = GetContext())
+		{
+			DamageTracker::MarkOldBBox(ctx, this);
+			ctx->RequestNextUpdate(0);
 		}
 	}
 

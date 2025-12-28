@@ -276,7 +276,7 @@ void Element::Render()
 		}
 
 		Rectanglef bb_f;
-		if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+		if (meta->effects.GetEffectBounds(bb_f) || ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
 		{
 			Math::ExpandToPixelGrid(bb_f);
 			const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
@@ -418,7 +418,7 @@ void Element::SetOffset(Vector2f offset, Element* _offset_parent, bool _offset_f
 		if (Context* ctx = GetContext())
 		{
 			Rectanglef bb_f;
-			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			if (meta->effects.GetEffectBounds(bb_f) || ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
 			{
 				Math::ExpandToPixelGrid(bb_f);
 				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
@@ -449,7 +449,7 @@ void Element::SetOffset(Vector2f offset, Element* _offset_parent, bool _offset_f
 			if (Context* ctx = GetContext())
 			{
 				Rectanglef bb_f;
-				if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+				if (meta->effects.GetEffectBounds(bb_f) || ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
 				{
 					Math::ExpandToPixelGrid(bb_f);
 					const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
@@ -565,7 +565,7 @@ void Element::SetBox(const Box& box)
 		if (Context* ctx = GetContext())
 		{
 			Rectanglef bb_f;
-			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			if (meta->effects.GetEffectBounds(bb_f) || ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
 			{
 				Math::ExpandToPixelGrid(bb_f);
 				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
@@ -2082,7 +2082,7 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		{
 			DamageTracker::MarkOldBBox(ctx, this);
 			Rectanglef bb_f;
-			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			if (meta->effects.GetEffectBounds(bb_f) || ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
 			{
 				Math::ExpandToPixelGrid(bb_f);
 				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);

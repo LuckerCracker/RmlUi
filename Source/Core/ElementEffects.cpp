@@ -342,6 +342,41 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 	}
 }
 
+bool ElementEffects::GetEffectBounds(Rectanglef& out_bounds)
+{
+	InstanceEffects();
+	ReloadEffectsData();
+
+	if (filters.empty() && backdrop_filters.empty() && mask_images.empty())
+		return false;
+
+	Rectanglef bounds = Rectanglef::MakeInvalid();
+	if (!ElementUtilities::GetBoundingBox(bounds, element, BoxArea::Auto))
+		return false;
+
+	for (const auto& filter : filters)
+		filter.filter->ExtendInkOverflow(element, bounds);
+
+	if (!backdrop_filters.empty())
+	{
+		Rectanglef backdrop_bounds = Rectanglef::MakeInvalid();
+		if (ElementUtilities::GetBoundingBox(backdrop_bounds, element, BoxArea::Border))
+		{
+			for (const auto& filter : backdrop_filters)
+				filter.filter->ExtendInkOverflow(element, backdrop_bounds);
+
+			if (bounds.Valid())
+				bounds = bounds.Join(backdrop_bounds);
+			else
+				bounds = backdrop_bounds;
+		}
+	}
+
+	Math::ExpandToPixelGrid(bounds);
+	out_bounds = bounds;
+	return true;
+}
+
 void ElementEffects::DirtyEffects()
 {
 	effects_dirty = true;

@@ -53,6 +53,9 @@ public:
 
 	void RenderEffects(RenderStage render_stage);
 
+	// Returns true if the element has effects that may draw outside its box, and outputs the full effect bounds.
+	bool GetEffectBounds(Rectanglef& out_bounds);
+
 	// Mark effects as dirty and force them to reset themselves.
 	void DirtyEffects();
 	// Mark the element data of effects as dirty.

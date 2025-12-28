@@ -404,11 +404,28 @@ void Element::SetOffset(Vector2f offset, Element* _offset_parent, bool _offset_f
 	// updated based on our left / right / top / bottom properties.
 	if (relative_offset_base != offset || offset_parent != _offset_parent || offset_fixed != _offset_fixed)
 	{
+		if (Context* ctx = GetContext())
+		{
+			DamageTracker::MarkOldBBox(ctx, this);
+		}
+
 		relative_offset_base = offset;
 		offset_fixed = _offset_fixed;
 		offset_parent = _offset_parent;
 		UpdateOffset();
 		DirtyAbsoluteOffset();
+
+		if (Context* ctx = GetContext())
+		{
+			Rectanglef bb_f;
+			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			{
+				Math::ExpandToPixelGrid(bb_f);
+				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
+				DamageTracker::MarkRect(ctx, bb_i);
+			}
+			ctx->RequestNextUpdate(0);
+		}
 	}
 
 	// Otherwise, our offset is updated in case left / right / top / bottom will have an impact on
@@ -421,7 +438,26 @@ void Element::SetOffset(Vector2f offset, Element* _offset_parent, bool _offset_f
 		UpdateOffset();
 
 		if (old_base != relative_offset_base || old_position != relative_offset_position)
+		{
+			if (Context* ctx = GetContext())
+			{
+				DamageTracker::MarkOldBBox(ctx, this);
+			}
+
 			DirtyAbsoluteOffset();
+
+			if (Context* ctx = GetContext())
+			{
+				Rectanglef bb_f;
+				if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+				{
+					Math::ExpandToPixelGrid(bb_f);
+					const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
+					DamageTracker::MarkRect(ctx, bb_i);
+				}
+				ctx->RequestNextUpdate(0);
+			}
+		}
 	}
 }
 
@@ -503,6 +539,11 @@ void Element::SetBox(const Box& box)
 {
 	if (box != main_box || additional_boxes.size() > 0)
 	{
+		if (Context* ctx = GetContext())
+		{
+			DamageTracker::MarkOldBBox(ctx, this);
+		}
+
 #ifdef RMLUI_DEBUG
 		for (const BoxEdge edge : {BoxEdge::Top, BoxEdge::Right, BoxEdge::Bottom, BoxEdge::Left})
 		{
@@ -520,6 +561,18 @@ void Element::SetBox(const Box& box)
 		meta->background_border.DirtyBackground();
 		meta->background_border.DirtyBorder();
 		meta->effects.DirtyEffectsData();
+
+		if (Context* ctx = GetContext())
+		{
+			Rectanglef bb_f;
+			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			{
+				Math::ExpandToPixelGrid(bb_f);
+				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
+				DamageTracker::MarkRect(ctx, bb_i);
+			}
+			ctx->RequestNextUpdate(0);
+		}
 	}
 }
 
@@ -2028,6 +2081,13 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		if (Context* ctx = GetContext())
 		{
 			DamageTracker::MarkOldBBox(ctx, this);
+			Rectanglef bb_f;
+			if (ElementUtilities::GetBoundingBox(bb_f, this, BoxArea::Auto))
+			{
+				Math::ExpandToPixelGrid(bb_f);
+				const Rectanglei bb_i = static_cast<Rectanglei>(bb_f).Extend(2);
+				DamageTracker::MarkRect(ctx, bb_i);
+			}
 			ctx->RequestNextUpdate(0);
 		}
 	}

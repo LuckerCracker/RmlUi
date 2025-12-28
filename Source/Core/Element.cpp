@@ -1041,6 +1041,15 @@ void Element::SetScrollLeft(float scroll_left)
 	const float new_offset = Math::Round(Math::Clamp(scroll_left, 0.0f, GetScrollWidth() - GetClientWidth()));
 	if (new_offset != scroll_offset.x)
 	{
+		if (Context* ctx = GetContext())
+		{
+			Rectanglei clip_region;
+			if (ElementUtilities::GetClippingRegion(this, clip_region, nullptr))
+				DamageTracker::MarkRect(ctx, clip_region);
+			else
+				DamageTracker::MarkOldBBox(ctx, this);
+			ctx->RequestNextUpdate(0);
+		}
 		scroll_offset.x = new_offset;
 		meta->scroll.UpdateScrollbar(ElementScroll::HORIZONTAL);
 		DirtyAbsoluteOffset();
@@ -1059,6 +1068,15 @@ void Element::SetScrollTop(float scroll_top)
 	const float new_offset = Math::Round(Math::Clamp(Math::Round(scroll_top), 0.0f, GetScrollHeight() - GetClientHeight()));
 	if (new_offset != scroll_offset.y)
 	{
+		if (Context* ctx = GetContext())
+		{
+			Rectanglei clip_region;
+			if (ElementUtilities::GetClippingRegion(this, clip_region, nullptr))
+				DamageTracker::MarkRect(ctx, clip_region);
+			else
+				DamageTracker::MarkOldBBox(ctx, this);
+			ctx->RequestNextUpdate(0);
+		}
 		scroll_offset.y = new_offset;
 		meta->scroll.UpdateScrollbar(ElementScroll::VERTICAL);
 		DirtyAbsoluteOffset();

@@ -344,6 +344,10 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 
 bool ElementEffects::GetEffectBounds(Rectanglef& out_bounds)
 {
+	const ComputedValues& computed = element->GetComputedValues();
+	if (!computed.has_filter() && !computed.has_backdrop_filter() && !computed.has_mask_image())
+		return false;
+
 	InstanceEffects();
 	ReloadEffectsData();
 

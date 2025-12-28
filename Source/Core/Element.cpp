@@ -846,6 +846,11 @@ void Element::SetPseudoClass(const String& pseudo_class, bool activate)
 {
 	if (meta->style.SetPseudoClass(pseudo_class, activate, false))
 	{
+		if (Context* ctx = GetContext())
+		{
+			DamageTracker::MarkOldBBox(ctx, this);
+			ctx->RequestNextUpdate(0);
+		}
 		// Include siblings in case of RCSS presence of sibling combinators '+', '~'.
 		DirtyDefinition(DirtyNodes::SelfAndSiblings);
 		OnPseudoClassChange(pseudo_class, activate);
@@ -884,6 +889,11 @@ StringList Element::GetActivePseudoClasses() const
 void Element::OverridePseudoClass(Element* element, const String& pseudo_class, bool activate)
 {
 	RMLUI_ASSERT(element);
+	if (Context* ctx = element->GetContext())
+	{
+		DamageTracker::MarkOldBBox(ctx, element);
+		ctx->RequestNextUpdate(0);
+	}
 	element->GetStyle()->SetPseudoClass(pseudo_class, activate, true);
 }
 

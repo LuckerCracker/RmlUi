@@ -385,11 +385,13 @@ private:
 	void RequestFullRedrawOncePerFrame();
 	void InvalidatePaintedBounds();
 	bool AddDamageRect(Rectanglei rect, const Element* element, const char* reason);
+	bool AddAnimationDamageRect(Rectanglei rect, const Element* element, const char* reason);
 	void FinalizeDamageRegion();
 	uint64_t GetDamageGeneration() const;
 	bool IsFullRedrawPending() const;
 	bool IsAnimationActive() const;
 	uint64_t GetPaintedBoundsGeneration() const;
+	double GetCurrentTime() const;
 
 	String name;
 	Vector2i dimensions;
@@ -439,6 +441,7 @@ private:
 	bool animations_active = false;
 	bool animations_active_previous = false;
 	bool full_redraw_once_per_frame = false;
+	double current_update_time = 0.0;
 
 	// The current state of Touches, required to implement proper inertia scrolling.
 	struct TouchState {
@@ -492,6 +495,7 @@ private:
 	bool render_requested = true;
 	bool force_full_redraw = false;
 	DamageRegion damage_region;
+	Vector<Rectanglei> animation_damage_rects;
 	uint64_t damage_generation = 0;
 	uint64_t damage_dirty_event_generation = 0;
 	size_t damage_dirty_event_count = 0;

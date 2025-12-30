@@ -260,15 +260,16 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 		Rectanglei scissor_region = Rectanglei(filter_region).IntersectIfValid(render_manager->GetScissorRegion());
 		render_manager->SetScissorRegion(scissor_region);
 	};
-	auto ApplyScissorRegionForBackdrop = [this, &render_manager]() {
-		// Set the scissor region for backdrop drawing, which covers the element's border box plus any area we may need
-		// to read from, such as any blur radius.
+	auto GetBackdropScissorRegion = [this, &initial_scissor_region](bool extend_for_filters) {
 		Rectanglef filter_region = Rectanglef::MakeInvalid();
 		ElementUtilities::GetBoundingBox(filter_region, element, BoxArea::Border);
-		for (const auto& filter : backdrop_filters)
-			filter.filter->ExtendInkOverflow(element, filter_region);
+		if (extend_for_filters)
+		{
+			for (const auto& filter : backdrop_filters)
+				filter.filter->ExtendInkOverflow(element, filter_region);
+		}
 		Math::ExpandToPixelGrid(filter_region);
-		render_manager->SetScissorRegion(Rectanglei(filter_region));
+		return Rectanglei(filter_region).IntersectIfValid(initial_scissor_region);
 	};
 
 	if (render_stage == RenderStage::Enter)
@@ -284,27 +285,35 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 		{
 			const LayerHandle backdrop_destination_layer = render_manager->GetTopLayer();
 
-			// @performance We strictly only need this temporary buffer when having to read from outside the element
-			// boundaries, which currently only applies to blur and drop-shadow. Alternatively, we could avoid this
-			// completely if we introduced a render interface API concept of different input and output clipping. That
-			// is, we set a large input scissor to cover all input data, which can be used e.g. during blurring, and use
-			// our small border-area-only clipping region for the composite layers output.
-			ApplyScissorRegionForBackdrop();
-			render_manager->PushLayer();
-			const LayerHandle backdrop_temp_layer = render_manager->GetTopLayer();
-
 			FilterHandleList filter_handles;
 			for (auto& filter : backdrop_filters)
 				filter.compiled.AddHandleTo(filter_handles);
+			const Rectanglei base_scissor_region = GetBackdropScissorRegion(false);
+			const Rectanglei extended_scissor_region = GetBackdropScissorRegion(true);
+			const bool needs_temp_layer = (extended_scissor_region != base_scissor_region);
 
-			// Render the backdrop filters in the extended scissor region including any ink overflow.
-			render_manager->CompositeLayers(backdrop_source_layer, backdrop_temp_layer, BlendMode::Blend, filter_handles);
+			if (needs_temp_layer)
+			{
+				// We only need a temporary buffer when reading from outside the element bounds (eg. blur, drop-shadow).
+				render_manager->SetScissorRegion(extended_scissor_region);
+				render_manager->PushLayer();
+				const LayerHandle backdrop_temp_layer = render_manager->GetTopLayer();
 
-			// Then composite the filter output to our destination while applying our clipping region, including any border-radius.
-			ApplyClippingRegion(PropertyId::BackdropFilter);
-			render_manager->CompositeLayers(backdrop_temp_layer, backdrop_destination_layer, BlendMode::Blend, {});
-			render_manager->PopLayer();
-			render_manager->SetScissorRegion(initial_scissor_region);
+				// Render the backdrop filters in the extended scissor region including any ink overflow.
+				render_manager->CompositeLayers(backdrop_source_layer, backdrop_temp_layer, BlendMode::Blend, filter_handles);
+
+				// Then composite the filter output to our destination while applying our clipping region, including any border-radius.
+				ApplyClippingRegion(PropertyId::BackdropFilter);
+				render_manager->CompositeLayers(backdrop_temp_layer, backdrop_destination_layer, BlendMode::Blend, {});
+				render_manager->PopLayer();
+				render_manager->SetScissorRegion(initial_scissor_region);
+			}
+			else
+			{
+				ApplyClippingRegion(PropertyId::BackdropFilter);
+				render_manager->CompositeLayers(backdrop_source_layer, backdrop_destination_layer, BlendMode::Blend, filter_handles);
+				render_manager->SetScissorRegion(initial_scissor_region);
+			}
 		}
 	}
 	else if (render_stage == RenderStage::Exit)

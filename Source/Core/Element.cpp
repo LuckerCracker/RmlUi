@@ -2913,12 +2913,21 @@ void Element::AdvanceAnimations()
 	if (!animations.empty())
 	{
 		double time = Clock::GetElapsedTime();
+		if (Context* ctx = GetContext())
+			time = ctx->GetCurrentTime();
 
 		for (auto& animation : animations)
 		{
 			Property property = animation.UpdateAndGetProperty(time, *this);
 			if (property.unit != Unit::UNKNOWN)
+			{
+				if (const Property* existing = GetProperty(animation.GetPropertyId()))
+				{
+					if (*existing == property)
+						continue;
+				}
 				SetProperty(animation.GetPropertyId(), property);
+			}
 		}
 
 		// Move all completed animations to the end of the list
@@ -3014,6 +3023,18 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		}
 	}
 
+	auto get_current_bounds = [this, context](Rectanglef& out_bounds) {
+		if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+		{
+			out_bounds = meta->damage_bounds_cache;
+			return;
+		}
+		GetDamageBounds(out_bounds);
+		meta->damage_bounds_cache = out_bounds;
+		meta->damage_bounds_cache_generation = context->GetDamageGeneration();
+		meta->damage_bounds_cache_valid = true;
+	};
+
 	if (!context->RegisterDirtyEvent())
 	{
 		if (want_new_bounds)
@@ -3036,18 +3057,6 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 	meta->damage_generation = context->GetDamageGeneration();
 	if (want_new_bounds)
 		meta->painted_bounds_dirty = true;
-
-	auto get_current_bounds = [this, context](Rectanglef& out_bounds) {
-		if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
-		{
-			out_bounds = meta->damage_bounds_cache;
-			return;
-		}
-		GetDamageBounds(out_bounds);
-		meta->damage_bounds_cache = out_bounds;
-		meta->damage_bounds_cache_generation = context->GetDamageGeneration();
-		meta->damage_bounds_cache_valid = true;
-	};
 
 	bool added_current = false;
 	bool added_old = false;

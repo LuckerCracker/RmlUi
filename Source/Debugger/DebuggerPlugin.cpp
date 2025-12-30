@@ -203,10 +203,12 @@ void DebuggerPlugin::Render()
 		damage_overlay_last_time = now_time;
 
 		const auto& damage_region = debug_context->GetDamageRegion();
+		const bool full_redraw = debug_context->GetDamageFullRedrawSuggested();
 		if (!damage_region.rects.empty())
 		{
 			DamageOverlayFrame frame;
 			frame.rects = damage_region.rects;
+			frame.full_redraw = full_redraw;
 			frame.time_left = damage_overlay_hold_seconds;
 			damage_overlay_frames.push_back(std::move(frame));
 			damage_overlay_force_redraw_time = Math::Max(damage_overlay_force_redraw_time, damage_overlay_hold_seconds);
@@ -225,8 +227,10 @@ void DebuggerPlugin::Render()
 				const float t = (damage_overlay_hold_seconds > 0.f ? frame.time_left / damage_overlay_hold_seconds : 0.f);
 				const int fill_alpha = Math::RoundToInteger(64.f * t);
 				const int outline_alpha = Math::RoundToInteger(220.f * t);
-				const Colourb fill_colour(0, 255, 0, (byte)Math::Clamp(fill_alpha, 0, 255));
-				const Colourb outline_colour(0, 255, 0, (byte)Math::Clamp(outline_alpha, 0, 255));
+				const Colourb fill_colour = frame.full_redraw ? Colourb(255, 255, 0, (byte)Math::Clamp(fill_alpha, 0, 255))
+					: Colourb(0, 255, 0, (byte)Math::Clamp(fill_alpha, 0, 255));
+				const Colourb outline_colour = frame.full_redraw ? Colourb(255, 255, 0, (byte)Math::Clamp(outline_alpha, 0, 255))
+					: Colourb(0, 255, 0, (byte)Math::Clamp(outline_alpha, 0, 255));
 
 				for (const Rectanglei& rect : frame.rects)
 				{

@@ -39,6 +39,7 @@
 #include "../../Include/RmlUi/Core/RenderManager.h"
 #include "../../Include/RmlUi/Core/StreamMemory.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+#include "Clock.h"
 #include "DataModel.h"
 #include "EventDispatcher.h"
 #include "PluginRegistry.h"
@@ -212,6 +213,7 @@ bool Context::Update()
 {
 	RMLUI_ZoneScoped;
 	DebugVerifyLocaleSetting();
+	current_update_time = Clock::GetElapsedTime();
 	animations_active_previous = animations_active;
 	animations_active = false;
 	full_redraw_once_per_frame = false;
@@ -462,6 +464,7 @@ void Context::ClearRenderRequests()
 	render_requested = false;
 	force_full_redraw = false;
 	damage_region.Clear();
+	animation_damage_rects.clear();
 	damage_merge_pending = false;
 	damage_generation++;
 	damage_dirty_event_generation = damage_generation;
@@ -571,6 +574,11 @@ uint64_t Context::GetDamageGeneration() const
 	return damage_generation;
 }
 
+double Context::GetCurrentTime() const
+{
+	return current_update_time;
+}
+
 bool Context::IsFullRedrawPending() const
 {
 	if (force_full_redraw)
@@ -664,8 +672,55 @@ bool Context::AddDamageRect(Rectanglei rect, const Element* element, const char*
 	return true;
 }
 
+bool Context::AddAnimationDamageRect(Rectanglei rect, const Element* element, const char* reason)
+{
+#ifndef RMLUI_DEBUG_DAMAGE
+	(void)element;
+	(void)reason;
+#endif
+	if (force_full_redraw)
+	{
+		RequestRender();
+		return false;
+	}
+	if (rect.Valid())
+		rect = rect.Intersect(Rectanglei::FromSize(dimensions));
+	if (!rect.Valid() || rect.Width() <= 0 || rect.Height() <= 0)
+		return false;
+
+	animation_damage_rects.push_back(rect);
+	RequestRender();
+
+	if (damage_region.rects.size() + animation_damage_rects.size() > damage_full_redraw_rect_count)
+	{
+		force_full_redraw = true;
+		damage_region.Clear();
+		animation_damage_rects.clear();
+		damage_merge_pending = false;
+		damage_region.AddRect(Rectanglei::FromSize(dimensions));
+		return true;
+	}
+
+	if (damage_merge_distance_px >= 0 && (damage_region.rects.size() + animation_damage_rects.size()) > damage_max_rects)
+		damage_merge_pending = true;
+
+#ifdef RMLUI_DEBUG_DAMAGE
+	const String element_address = element ? element->GetAddress() : String("<null>");
+	Log::Message(Log::LT_DEBUG, "[damage] DamageAdd(Anim): reason=%s element=%s rect=(%d,%d)-(%d,%d)", reason, element_address.c_str(), rect.Left(),
+		rect.Top(), rect.Right(), rect.Bottom());
+#endif
+
+	return true;
+}
+
 void Context::FinalizeDamageRegion()
 {
+	if (!animation_damage_rects.empty())
+	{
+		damage_region.rects.insert(damage_region.rects.end(), animation_damage_rects.begin(), animation_damage_rects.end());
+		animation_damage_rects.clear();
+		damage_region.area_dirty = true;
+	}
 	if (!damage_merge_pending)
 		return;
 	damage_merge_pending = false;

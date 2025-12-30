@@ -276,6 +276,23 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 		Math::ExpandToPixelGrid(filter_region);
 		return Rectanglei(filter_region).IntersectIfValid(initial_scissor_region);
 	};
+	auto BackdropNeedsRender = [this, &GetBackdropScissorRegion]() {
+		Context* context = element->GetContext();
+		if (!context)
+			return true;
+		const auto& damage_rects = context->GetDamageRegion().rects;
+		if (damage_rects.empty())
+			return true;
+		const Rectanglei backdrop_region = GetBackdropScissorRegion(true);
+		if (!backdrop_region.Valid())
+			return false;
+		for (const Rectanglei& rect : damage_rects)
+		{
+			if (rect.Valid() && rect.Intersects(backdrop_region))
+				return true;
+		}
+		return false;
+	};
 
 	if (render_stage == RenderStage::Enter)
 	{
@@ -288,6 +305,9 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 
 		if (!backdrop_filters.empty())
 		{
+			if (!BackdropNeedsRender())
+				return;
+
 			const LayerHandle backdrop_destination_layer = render_manager->GetTopLayer();
 
 			FilterHandleList filter_handles;

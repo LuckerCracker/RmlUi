@@ -91,6 +91,8 @@ private:
 	bool effects_dirty = false;
 	// If set, element data of all decorators need to be regenerated.
 	bool effects_data_dirty = false;
+	// If set, filters need to be recompiled.
+	bool filters_data_dirty = false;
 };
 
 } // namespace Rml

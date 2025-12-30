@@ -296,7 +296,17 @@ void Element::Render()
 	if (meta->painted_bounds_dirty || !meta->last_painted_bounds_valid)
 	{
 		Rectanglef new_bounds;
-		GetDamageBounds(new_bounds);
+		if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
+		{
+			if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+				new_bounds = meta->damage_bounds_cache;
+			else
+				GetDamageBounds(new_bounds);
+		}
+		else
+		{
+			GetDamageBounds(new_bounds);
+		}
 
 	#ifdef RMLUI_DEBUG_DAMAGE
 		Rectanglef old_bounds = meta->last_painted_bounds;
@@ -3090,6 +3100,19 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 	bool added_current = false;
 	bool added_old = false;
 
+	if (needs_new_bounds)
+	{
+		Rectanglef current_bounds;
+		get_current_bounds(current_bounds);
+		Rectanglei rect = Rectanglei(current_bounds);
+		if (meta->last_painted_bounds_valid)
+			rect = rect.Join(Rectanglei(meta->last_painted_bounds));
+		context->AddDamageRect(rect, this, reason);
+		meta->damage_needs_new_bounds = false;
+		context->RequestRender();
+		return;
+	}
+
 	if (meta->last_painted_bounds_valid)
 	{
 		added_old = context->AddDamageRect(Rectanglei(meta->last_painted_bounds), this, reason);
@@ -3099,13 +3122,6 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		Rectanglef current_bounds;
 		get_current_bounds(current_bounds);
 		added_current = context->AddDamageRect(Rectanglei(current_bounds), this, reason);
-	}
-
-	if (needs_new_bounds)
-	{
-		meta->damage_needs_new_bounds = true;
-		context->RequestRender();
-		return;
 	}
 
 	if (!added_current && !added_old)

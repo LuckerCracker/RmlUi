@@ -52,6 +52,7 @@ void ElementEffects::InstanceEffects()
 
 	effects_dirty = false;
 	effects_data_dirty = true;
+	filters_data_dirty = true;
 
 	RMLUI_ZoneScopedC(0xB22222);
 	ReleaseEffects();
@@ -177,19 +178,23 @@ void ElementEffects::ReloadEffectsData()
 		if (decorator_data_failed)
 			Log::Message(Log::LT_WARNING, "Could not generate decorator element data: %s", element->GetAddress().c_str());
 
-		bool filter_compile_failed = false;
-		for (FilterEntryList* list : {&filters, &backdrop_filters})
+		if (filters_data_dirty)
 		{
-			for (FilterEntry& filter : *list)
+			filters_data_dirty = false;
+			bool filter_compile_failed = false;
+			for (FilterEntryList* list : {&filters, &backdrop_filters})
 			{
-				filter.compiled = filter.filter->CompileFilter(element);
-				if (!filter.compiled)
-					filter_compile_failed = true;
+				for (FilterEntry& filter : *list)
+				{
+					filter.compiled = filter.filter->CompileFilter(element);
+					if (!filter.compiled)
+						filter_compile_failed = true;
+				}
 			}
-		}
 
-		if (filter_compile_failed)
-			Log::Message(Log::LT_WARNING, "Could not compile filter on element: %s", element->GetAddress().c_str());
+			if (filter_compile_failed)
+				Log::Message(Log::LT_WARNING, "Could not compile filter on element: %s", element->GetAddress().c_str());
+		}
 	}
 }
 
@@ -367,6 +372,7 @@ void ElementEffects::ExtendInkOverflowBounds(Rectanglef& bounds)
 void ElementEffects::DirtyEffects()
 {
 	effects_dirty = true;
+	filters_data_dirty = true;
 }
 
 void ElementEffects::DirtyEffectsData()

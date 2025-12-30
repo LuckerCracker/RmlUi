@@ -698,7 +698,18 @@ bool Context::AddDamageRect(Rectanglei rect, const Element* element, const char*
 	}
 
 	if (damage_merge_distance_px >= 0 && damage_region.rects.size() > damage_max_rects)
+	{
 		damage_merge_pending = true;
+		if (damage_full_redraw_area_percent < 100.f &&
+			damage_region.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions))
+		{
+			force_full_redraw = true;
+			damage_region.Clear();
+			damage_merge_pending = false;
+			damage_region.AddRect(Rectanglei::FromSize(dimensions));
+			return true;
+		}
+	}
 
 #ifdef RMLUI_DEBUG_DAMAGE
 	const String element_address = element ? element->GetAddress() : String("<null>");

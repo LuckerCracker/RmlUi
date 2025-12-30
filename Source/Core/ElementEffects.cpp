@@ -346,10 +346,12 @@ void ElementEffects::ExtendInkOverflowBounds(Rectanglef& bounds)
 {
 	InstanceEffects();
 
-	if (filters.empty())
+	if (filters.empty() && backdrop_filters.empty())
 		return;
 
 	for (const auto& filter : filters)
+		filter.filter->ExtendInkOverflow(element, bounds);
+	for (const auto& filter : backdrop_filters)
 		filter.filter->ExtendInkOverflow(element, bounds);
 }
 

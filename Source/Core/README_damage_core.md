@@ -52,7 +52,7 @@ Global/full redraw triggers:
 - base: `ElementUtilities::GetBoundingBox(..., BoxArea::Auto)`
   - includes transforms and box-shadow (via BoxArea::Auto)
 - fallback if transform is not resolvable: border box
-- inflation: `ElementEffects::ExtendInkOverflowBounds()` adds filter ink overflow (blur/drop-shadow)
+- inflation: `ElementEffects::ExtendInkOverflowBounds()` adds ink overflow from `filter` and `backdrop-filter` (blur/drop-shadow)
 
 `last_painted_bounds` is stored per element and updated after rendering.
 

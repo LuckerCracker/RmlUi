@@ -3015,7 +3015,7 @@ void Element::GetDamageBounds(Rectanglef& out_bounds)
 	if (!ElementUtilities::GetBoundingBox(out_bounds, this, BoxArea::Auto))
 		out_bounds = Rectanglef::FromPositionSize(GetAbsoluteOffset(BoxArea::Border), GetBox().GetSize(BoxArea::Border));
 
-	if (meta->computed_values.has_filter())
+	if (meta->computed_values.has_filter() || meta->computed_values.has_backdrop_filter())
 		meta->effects.ExtendInkOverflowBounds(out_bounds);
 }
 

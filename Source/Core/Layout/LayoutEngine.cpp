@@ -37,6 +37,7 @@ namespace Rml {
 
 void LayoutEngine::FormatElement(Element* element, Vector2f containing_block)
 {
+	RMLUI_ZoneScopedN("LayoutEngine::FormatElement");
 	RMLUI_ASSERT(element && containing_block.x >= 0 && containing_block.y >= 0);
 
 	RootBox root(containing_block);

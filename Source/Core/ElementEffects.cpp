@@ -342,6 +342,17 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 	}
 }
 
+void ElementEffects::ExtendInkOverflowBounds(Rectanglef& bounds)
+{
+	InstanceEffects();
+
+	if (filters.empty())
+		return;
+
+	for (const auto& filter : filters)
+		filter.filter->ExtendInkOverflow(element, bounds);
+}
+
 void ElementEffects::DirtyEffects()
 {
 	effects_dirty = true;

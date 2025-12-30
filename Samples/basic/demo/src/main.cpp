@@ -30,7 +30,6 @@
 #include "DemoWindow.h"
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Factory.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -72,8 +71,6 @@ int main(int /*argc*/, char** /*argv*/)
 		return -1;
 	}
 
-	Rml::Debugger::Initialise(context);
-
 	Shell::LoadFonts();
 
 	DemoWindow demo_window;
@@ -101,9 +98,12 @@ int main(int /*argc*/, char** /*argv*/)
 		running = Backend::ProcessEvents(context, &Shell::ProcessKeyDownShortcuts, true);
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	demo_window.Shutdown();

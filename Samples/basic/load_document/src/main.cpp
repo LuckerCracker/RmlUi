@@ -27,7 +27,6 @@
  */
 
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -70,7 +69,6 @@ int main(int /*argc*/, char** /*argv*/)
 	}
 
 	// The RmlUi debugger is optional but very useful. Try it by pressing 'F8' after starting this sample.
-	Rml::Debugger::Initialise(context);
 
 	// Fonts should be loaded before any documents are loaded.
 	Shell::LoadFonts();
@@ -91,9 +89,12 @@ int main(int /*argc*/, char** /*argv*/)
 		context->Update();
 
 		// Prepare the backend for taking rendering commands from RmlUi and then render the context.
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	// Shutdown RmlUi.

@@ -33,7 +33,6 @@
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Input.h>
-#include <RmlUi/Debugger.h>
 
 static Rml::UniquePtr<ShellFileInterface> file_interface;
 
@@ -91,12 +90,8 @@ bool Shell::ProcessKeyDownShortcuts(Rml::Context* context, Rml::Input::KeyIdenti
 	{
 		// Priority shortcuts are handled before submitting the key to the context.
 
-		// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys.
-		if (key == Rml::Input::KI_F8)
-		{
-			Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
-		}
-		else if (key == Rml::Input::KI_0 && key_modifier & Rml::Input::KM_CTRL)
+		// Set dp-ratio using Ctrl +/-/0 keys.
+		if (key == Rml::Input::KI_0 && key_modifier & Rml::Input::KM_CTRL)
 		{
 			context->SetDensityIndependentPixelRatio(native_dp_ratio);
 		}

@@ -36,7 +36,6 @@
 #include "EventManager.h"
 #include "HighScores.h"
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -81,7 +80,6 @@ int main(int /*argc*/, char** /*argv*/)
 	}
 
 	// Initialise the RmlUi debugger.
-	Rml::Debugger::Initialise(context);
 
 	// Load the font faces required for Invaders.
 	Shell::LoadFonts();
@@ -115,9 +113,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	// Shut down the game singletons.

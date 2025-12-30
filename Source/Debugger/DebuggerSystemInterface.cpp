@@ -60,7 +60,12 @@ void DebuggerSystemInterface::JoinPath(String& translated_path, const String& do
 
 bool DebuggerSystemInterface::LogMessage(Log::Type type, const String& message)
 {
+#ifdef RMLUI_DEBUG_DAMAGE
+	if (message.find("[damage]") == String::npos)
+		log->AddLogMessage(type, message);
+#else
 	log->AddLogMessage(type, message);
+#endif
 
 	return application_interface->LogMessage(type, message);
 }

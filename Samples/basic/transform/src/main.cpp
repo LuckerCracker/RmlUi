@@ -27,7 +27,6 @@
  */
 
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 #include <cmath>
@@ -138,8 +137,6 @@ int main(int /*argc*/, char** /*argv*/)
 		Shell::Shutdown();
 		return -1;
 	}
-
-	Rml::Debugger::Initialise(context);
 	Shell::LoadFonts();
 
 	Rml::UniquePtr<DemoWindow> window_1 = Rml::MakeUnique<DemoWindow>("Orthographic transform", Rml::Vector2f(120, 180), context);
@@ -157,9 +154,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 
 		double t = Rml::GetSystemInterface()->GetElapsedTime();
 		static double t_prev = t;

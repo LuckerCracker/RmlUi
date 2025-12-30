@@ -11,7 +11,6 @@
 
 #include "Inventory.h"
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -52,8 +51,6 @@ int main(int /*argc*/, char** /*argv*/)
 		Shell::Shutdown();
 		return -1;
 	}
-
-	Rml::Debugger::Initialise(context);
 	Shell::LoadFonts();
 
 	// Load and show the inventory document.
@@ -73,9 +70,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	delete inventory_1;

@@ -58,6 +58,18 @@ enum class EventId : uint16_t;
 
 class RMLUICORE_API Context : public ScriptInterface {
 public:
+	struct DamageRegion {
+		Vector<Rectanglei> rects;
+		float last_area_percent = 0.f;
+		bool area_dirty = true;
+
+		void AddRect(Rectanglei rect);
+		void MergeOverlaps(size_t max_rects, int merge_distance_px);
+		float ComputeAreaPercent(Vector2i viewport_size);
+		bool ShouldFullRedraw(float threshold_area_percent, size_t threshold_rect_count, Vector2i viewport_size);
+		void Clear();
+	};
+
 	/// Constructs a new, uninitialised context. This should not be called directly, use CreateContext() instead.
 	/// @param[in] name The name of the context.
 	/// @param[in] render_manager The render manager used for this context.
@@ -89,6 +101,38 @@ public:
 	bool Update();
 	/// Renders all visible elements in the context's documents.
 	bool Render();
+	/// Returns true if the context needs rendering.
+	bool NeedsRender() const;
+	/// Forces a full redraw on the next render.
+	void SetForceFullRedraw(bool force);
+	/// Requests a full redraw on the next render.
+	void RequestFullRedraw();
+	/// Clears any render requests after a successful render.
+	void ClearRenderRequests();
+	/// Returns the current accumulated damage region.
+	const DamageRegion& GetDamageRegion() const;
+	/// Takes the accumulated damage region and clears it in the context.
+	DamageRegion TakeDamageRegion();
+	/// Returns the damage rects for debugging purposes.
+	const Vector<Rectanglei>& GetDebugDamageRects() const;
+	/// Returns last computed damage area percent.
+	float GetDamageAreaPercent() const;
+	/// Returns suggested full redraw based on thresholds.
+	bool GetDamageFullRedrawSuggested() const;
+	/// Sets the damage merge distance in pixels.
+	void SetDamageMergeDistance(int distance_px);
+	/// Sets the maximum number of damage rects before collapsing.
+	void SetDamageMaxRects(size_t max_rects);
+	/// Sets thresholds for suggesting full redraw.
+	void SetDamageFullRedrawThresholds(float area_percent, size_t rect_count);
+	/// Returns the damage merge distance in pixels.
+	int GetDamageMergeDistance() const;
+	/// Returns the maximum number of damage rects before collapsing.
+	size_t GetDamageMaxRects() const;
+	/// Returns the full redraw area threshold in percent.
+	float GetDamageFullRedrawAreaThreshold() const;
+	/// Returns the full redraw rect count threshold.
+	size_t GetDamageFullRedrawRectThreshold() const;
 
 	/// Creates a new, empty document and places it into this context.
 	/// @param[in] instancer_name The name of the instancer used to create the document.
@@ -326,6 +370,27 @@ protected:
 	void Release() override;
 
 private:
+	friend class Element;
+#ifdef RMLUI_DEBUG_DAMAGE
+	void DebugNotifyDirty(const Element* element, const char* reason);
+	bool DebugConsumeBoundsLogBudget();
+	bool debug_dirty_since_render = false;
+	int debug_no_change_frames = 0;
+	int debug_bounds_log_budget = 2;
+#endif
+	void RequestRender();
+	void NotifyHoverChainDirty();
+	bool RegisterDirtyEvent();
+	void NotifyAnimationActive();
+	void RequestFullRedrawOncePerFrame();
+	void InvalidatePaintedBounds();
+	bool AddDamageRect(Rectanglei rect, const Element* element, const char* reason);
+	void FinalizeDamageRegion();
+	uint64_t GetDamageGeneration() const;
+	bool IsFullRedrawPending() const;
+	bool IsAnimationActive() const;
+	uint64_t GetPaintedBoundsGeneration() const;
+
 	String name;
 	Vector2i dimensions;
 	float density_independent_pixel_ratio = 1.f;
@@ -368,7 +433,12 @@ private:
 
 	// Input state; stored from the most recent input events we receive from the application.
 	Vector2i mouse_position;
+	Vector2i last_hover_update_mouse_position;
 	bool mouse_active;
+	bool hover_chain_dirty = false;
+	bool animations_active = false;
+	bool animations_active_previous = false;
+	bool full_redraw_once_per_frame = false;
 
 	// The current state of Touches, required to implement proper inertia scrolling.
 	struct TouchState {
@@ -418,6 +488,19 @@ private:
 	// Time in seconds until Update and Render should be called again. This allows applications to only redraw the ui if needed.
 	// See RequestNextUpdate() and NextUpdateRequested() for details.
 	double next_update_timeout = 0;
+
+	bool render_requested = true;
+	bool force_full_redraw = false;
+	DamageRegion damage_region;
+	uint64_t damage_generation = 0;
+	uint64_t damage_dirty_event_generation = 0;
+	size_t damage_dirty_event_count = 0;
+	uint64_t painted_bounds_generation = 0;
+	int damage_merge_distance_px = 2;
+	size_t damage_max_rects = 32;
+	float damage_full_redraw_area_percent = 60.f;
+	size_t damage_full_redraw_rect_count = 64;
+	bool damage_merge_pending = false;
 
 	// Internal callback for when an element is detached or removed from the hierarchy.
 	void OnElementDetach(Element* element);

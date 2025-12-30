@@ -27,7 +27,6 @@
  */
 
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -110,8 +109,6 @@ int main(int /*argc*/, char** /*argv*/)
 	dm_con.Bind("line_color", &toggle_model.line_color);
 	dm_con.Bind("fill_color", &toggle_model.fill_color);
 	dm_con.BindEventCallback("toggle_svg", &SVGToogleStruct::Toggle, &toggle_model);
-
-	Rml::Debugger::Initialise(context);
 	Shell::LoadFonts();
 
 	// Load and show the documents.
@@ -134,9 +131,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	// Shutdown RmlUi.

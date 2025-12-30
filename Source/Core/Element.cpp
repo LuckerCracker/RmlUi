@@ -142,33 +142,55 @@ Element::~Element()
 void Element::Update(float dp_ratio, Vector2f vp_dimensions)
 {
 #ifdef RMLUI_TRACY_PROFILING
-	auto name = GetAddress(false, false);
 	RMLUI_ZoneScoped;
-	RMLUI_ZoneText(name.c_str(), name.size());
 #endif
 
-	OnUpdate();
+	{
+		RMLUI_ZoneScopedN("Element::Update.OnUpdate");
+		OnUpdate();
+	}
 
-	HandleTransitionProperty();
-	HandleAnimationProperty();
-	AdvanceAnimations();
+	{
+		RMLUI_ZoneScopedN("Element::Update.Animations");
+		if (!animations.empty() && IsVisible(true))
+		{
+			if (Context* ctx = GetContext())
+				ctx->NotifyAnimationActive();
+		}
+		HandleTransitionProperty();
+		HandleAnimationProperty();
+		AdvanceAnimations();
+	}
 
-	meta->scroll.Update();
+	{
+		RMLUI_ZoneScopedN("Element::Update.Scroll");
+		meta->scroll.Update();
+	}
 
-	UpdateProperties(dp_ratio, vp_dimensions);
+	{
+		RMLUI_ZoneScopedN("Element::Update.Properties");
+		UpdateProperties(dp_ratio, vp_dimensions);
+	}
 
 	// Do en extra pass over the animations and properties if the 'animation' property was just changed.
 	if (dirty_animation)
 	{
+		RMLUI_ZoneScopedN("Element::Update.Animations.Dirty");
 		HandleAnimationProperty();
 		AdvanceAnimations();
 		UpdateProperties(dp_ratio, vp_dimensions);
 	}
 
-	meta->effects.InstanceEffects();
+	{
+		RMLUI_ZoneScopedN("Element::Update.Effects");
+		meta->effects.InstanceEffects();
+	}
 
-	for (size_t i = 0; i < children.size(); i++)
-		children[i]->Update(dp_ratio, vp_dimensions);
+	{
+		RMLUI_ZoneScopedN("Element::Update.Children");
+		for (size_t i = 0; i < children.size(); i++)
+			children[i]->Update(dp_ratio, vp_dimensions);
+	}
 
 	if (!animations.empty() && IsVisible(true))
 	{
@@ -202,9 +224,7 @@ void Element::UpdateProperties(const float dp_ratio, const Vector2f vp_dimension
 void Element::Render()
 {
 #ifdef RMLUI_TRACY_PROFILING
-	auto name = GetAddress(false, false);
 	RMLUI_ZoneScoped;
-	RMLUI_ZoneText(name.c_str(), name.size());
 #endif
 
 	UpdateAbsoluteOffsetAndRenderBoxData();
@@ -238,6 +258,54 @@ void Element::Render()
 		element->Render();
 
 	meta->effects.RenderEffects(RenderStage::Exit);
+
+	if (Context* ctx = (owner_document ? owner_document->GetContext() : nullptr))
+	{
+		const uint64_t generation = ctx->GetPaintedBoundsGeneration();
+		if (meta->painted_bounds_generation != generation)
+		{
+			meta->painted_bounds_generation = generation;
+			meta->last_painted_bounds_valid = false;
+		}
+	}
+
+	if (meta->painted_bounds_dirty || !meta->last_painted_bounds_valid)
+	{
+		Rectanglef new_bounds;
+		GetDamageBounds(new_bounds);
+
+	#ifdef RMLUI_DEBUG_DAMAGE
+		Rectanglef old_bounds = meta->last_painted_bounds;
+		bool had_old_bounds = meta->last_painted_bounds_valid;
+	#endif
+
+		if (meta->damage_needs_new_bounds)
+		{
+			if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
+				context->AddDamageRect(Rectanglei(new_bounds), this, "new_bounds");
+			meta->damage_needs_new_bounds = false;
+		}
+
+		meta->last_painted_bounds = new_bounds;
+		meta->last_painted_bounds_valid = true;
+		meta->painted_bounds_dirty = false;
+
+	#ifdef RMLUI_DEBUG_DAMAGE
+		if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
+		{
+			if (context->DebugConsumeBoundsLogBudget())
+			{
+				if (!had_old_bounds || old_bounds != new_bounds)
+				{
+					Log::Message(Log::LT_DEBUG,
+						"[damage] BoundsUpdate element=%s old=(%.1f,%.1f)-(%.1f,%.1f) new=(%.1f,%.1f)-(%.1f,%.1f)", GetAddress().c_str(),
+						old_bounds.Left(), old_bounds.Top(), old_bounds.Right(), old_bounds.Bottom(), new_bounds.Left(), new_bounds.Top(),
+						new_bounds.Right(), new_bounds.Bottom());
+				}
+			}
+		}
+	#endif
+	}
 }
 
 ElementPtr Element::Clone() const
@@ -1443,6 +1511,21 @@ ElementPtr Element::RemoveChild(Element* child)
 		// Add the element to the delete list
 		if (itr->get() == child)
 		{
+			if (Context* context = (child->owner_document ? child->owner_document->GetContext() : nullptr))
+			{
+				if (child->meta->last_painted_bounds_valid)
+				{
+					context->AddDamageRect(Rectanglei(child->meta->last_painted_bounds), child, "remove");
+				}
+				else
+				{
+					Rectanglef current_bounds;
+					if (!ElementUtilities::GetBoundingBox(current_bounds, child, BoxArea::Auto))
+						current_bounds = Rectanglef::FromPositionSize(child->GetAbsoluteOffset(BoxArea::Border), child->GetBox().GetSize(BoxArea::Border));
+					context->AddDamageRect(Rectanglei(current_bounds), child, "remove");
+				}
+			}
+
 			Element* ancestor = child;
 			for (int i = 0; i <= ChildNotifyLevels && ancestor; i++, ancestor = ancestor->GetParentNode())
 				ancestor->OnChildRemove(child);
@@ -1788,6 +1871,7 @@ void Element::OnAttributeChange(const ElementAttributes& changed_attributes)
 void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 {
 	RMLUI_ZoneScoped;
+	bool paint_dirty = false;
 	const bool top_right_bottom_left_changed = (           //
 		changed_properties.Contains(PropertyId::Top) ||    //
 		changed_properties.Contains(PropertyId::Right) ||  //
@@ -1847,6 +1931,7 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 			if (!visible)
 				Blur();
 		}
+		paint_dirty = true;
 	}
 
 	const bool border_radius_changed = (                                    //
@@ -1895,6 +1980,7 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		changed_properties.Contains(PropertyId::BoxShadow))         //
 	{
 		meta->background_border.DirtyBackground();
+		paint_dirty = true;
 	}
 
 	// Dirty the border if it's changed.
@@ -1910,12 +1996,14 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		changed_properties.Contains(PropertyId::Opacity))
 	{
 		meta->background_border.DirtyBorder();
+		paint_dirty = true;
 	}
 
 	// Dirty the effects if they've changed.
 	if (border_radius_changed || filter_or_mask_changed || changed_properties.Contains(PropertyId::Decorator))
 	{
 		meta->effects.DirtyEffects();
+		paint_dirty = true;
 	}
 
 	const bool font_changed = (changed_properties.Contains(PropertyId::FontFamily) || changed_properties.Contains(PropertyId::FontStyle) ||
@@ -1930,6 +2018,7 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		changed_properties.Contains(PropertyId::ImageColor))
 	{
 		meta->effects.DirtyEffectsData();
+		paint_dirty = true;
 	}
 
 	// Check for `perspective' and `perspective-origin' changes
@@ -1959,6 +2048,9 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 	{
 		dirty_transition = true;
 	}
+
+	if (paint_dirty)
+		AddDamageForDirty("paint", false);
 }
 
 void Element::OnPseudoClassChange(const String& /*pseudo_class*/, bool /*activate*/) {}
@@ -1969,6 +2061,7 @@ void Element::OnChildRemove(Element* /*child*/) {}
 
 void Element::DirtyLayout()
 {
+	AddDamageForDirty("layout", true);
 	if (Element* document = GetOwnerDocument())
 		document->DirtyLayout();
 }
@@ -2193,7 +2286,10 @@ void Element::SetParent(Element* _parent)
 void Element::DirtyAbsoluteOffset()
 {
 	if (!absolute_offset_dirty)
+	{
+		AddDamageForDirty("geometry", true);
 		DirtyAbsoluteOffsetRecursive();
+	}
 }
 
 void Element::DirtyAbsoluteOffsetRecursive()
@@ -2451,6 +2547,7 @@ void Element::AddToStackingContext(Vector<StackingContextChild>& stacking_childr
 
 void Element::DirtyStackingContext()
 {
+	AddDamageForDirty("paint", false);
 	// Find the first ancestor that has a local stacking context, that is our stacking context parent.
 	Element* stacking_context_parent = this;
 	while (stacking_context_parent && !stacking_context_parent->local_stacking_context)
@@ -2464,6 +2561,8 @@ void Element::DirtyStackingContext()
 
 void Element::DirtyDefinition(DirtyNodes dirty_nodes)
 {
+	const bool needs_new_bounds = (owner_document != nullptr && IsLayoutDirty());
+	AddDamageForDirty("style", needs_new_bounds);
 	switch (dirty_nodes)
 	{
 	case DirtyNodes::Self: dirty_definition = true; break;
@@ -2821,8 +2920,103 @@ void Element::AdvanceAnimations()
 
 void Element::DirtyTransformState(bool perspective_dirty, bool transform_dirty)
 {
+	AddDamageForDirty("transform", true);
 	dirty_perspective |= perspective_dirty;
 	dirty_transform |= transform_dirty;
+}
+
+void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
+{
+#ifdef RMLUI_TRACY_PROFILING
+	RMLUI_ZoneScopedN("Element::AddDamageForDirty");
+#endif
+	Context* context = (owner_document ? owner_document->GetContext() : nullptr);
+	if (!context)
+		return;
+	const bool want_new_bounds = needs_new_bounds || !meta->last_painted_bounds_valid;
+	if (want_new_bounds)
+		context->NotifyHoverChainDirty();
+
+	if (context->IsFullRedrawPending())
+	{
+		if (want_new_bounds)
+			meta->painted_bounds_dirty = true;
+		if (needs_new_bounds)
+			meta->damage_needs_new_bounds = true;
+		context->RequestRender();
+		return;
+	}
+
+	if (context->IsAnimationActive())
+	{
+		context->RequestFullRedrawOncePerFrame();
+		return;
+	}
+
+	if (!context->RegisterDirtyEvent())
+	{
+		if (want_new_bounds)
+			meta->painted_bounds_dirty = true;
+		if (needs_new_bounds)
+			meta->damage_needs_new_bounds = true;
+		return;
+	}
+
+	if (meta->damage_generation == context->GetDamageGeneration())
+	{
+		if (needs_new_bounds)
+		{
+			meta->damage_needs_new_bounds = true;
+			meta->painted_bounds_dirty = true;
+		}
+		return;
+	}
+
+	meta->damage_generation = context->GetDamageGeneration();
+	if (want_new_bounds)
+		meta->painted_bounds_dirty = true;
+
+	auto get_current_bounds = [this](Rectanglef& out_bounds) { GetDamageBounds(out_bounds); };
+
+	bool added_current = false;
+	bool added_old = false;
+
+	if (meta->last_painted_bounds_valid)
+	{
+		added_old = context->AddDamageRect(Rectanglei(meta->last_painted_bounds), this, reason);
+	}
+	else
+	{
+		Rectanglef current_bounds;
+		get_current_bounds(current_bounds);
+		added_current = context->AddDamageRect(Rectanglei(current_bounds), this, reason);
+	}
+
+	if (needs_new_bounds)
+	{
+		meta->damage_needs_new_bounds = true;
+		context->RequestRender();
+		return;
+	}
+
+	if (!added_current && !added_old)
+	{
+		Rectanglef current_bounds;
+		get_current_bounds(current_bounds);
+		context->AddDamageRect(Rectanglei(current_bounds), this, reason);
+	}
+}
+
+void Element::GetDamageBounds(Rectanglef& out_bounds)
+{
+#ifdef RMLUI_TRACY_PROFILING
+	RMLUI_ZoneScopedN("Element::GetDamageBounds");
+#endif
+	if (!ElementUtilities::GetBoundingBox(out_bounds, this, BoxArea::Auto))
+		out_bounds = Rectanglef::FromPositionSize(GetAbsoluteOffset(BoxArea::Border), GetBox().GetSize(BoxArea::Border));
+
+	if (meta->computed_values.has_filter())
+		meta->effects.ExtendInkOverflowBounds(out_bounds);
 }
 
 void Element::UpdateTransformState()
@@ -3006,6 +3200,9 @@ void Element::OnDpRatioChangeRecursive()
 
 void Element::DirtyFontFaceRecursive()
 {
+	if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
+		context->RequestFullRedraw();
+
 	// Dirty the font size to force the element to update the face handle during the next Update(), and update any existing text geometry.
 	meta->style.DirtyProperty(PropertyId::FontSize);
 	meta->computed_values.font_face_handle(0);

@@ -40,6 +40,7 @@
 #include "ElementStyle.h"
 #include "EventDispatcher.h"
 #include "Pool.h"
+#include <cstdint>
 
 namespace Rml {
 
@@ -53,6 +54,12 @@ struct ElementMeta {
 	ElementEffects effects;
 	ElementScroll scroll;
 	Style::ComputedValues computed_values;
+	Rectanglef last_painted_bounds = Rectanglef::MakeInvalid();
+	bool last_painted_bounds_valid = false;
+	bool damage_needs_new_bounds = false;
+	bool painted_bounds_dirty = true;
+	uint64_t damage_generation = 0;
+	uint64_t painted_bounds_generation = 0;
 };
 
 struct ElementMetaPool {

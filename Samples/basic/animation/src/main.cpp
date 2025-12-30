@@ -28,7 +28,6 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/TransformPrimitive.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 #include <sstream>
@@ -297,8 +296,6 @@ int main(int /*argc*/, char** /*argv*/)
 		return -1;
 	}
 
-	Rml::Debugger::Initialise(context);
-
 	EventInstancer event_listener_instancer;
 	Rml::Factory::RegisterEventListenerInstancer(&event_listener_instancer);
 
@@ -321,9 +318,12 @@ int main(int /*argc*/, char** /*argv*/)
 			window->Update(t);
 			context->Update();
 
-			Backend::BeginFrame();
-			context->Render();
-			Backend::PresentFrame();
+			if (context->NeedsRender())
+			{
+				Backend::BeginFrame();
+				context->Render();
+				Backend::PresentFrame();
+			}
 
 			single_loop = false;
 		}

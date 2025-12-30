@@ -27,7 +27,6 @@
  */
 
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 #include <numeric>
@@ -489,8 +488,6 @@ int main(int /*argc*/, char** /*argv*/)
 		Shell::Shutdown();
 		return -1;
 	}
-
-	Rml::Debugger::Initialise(context);
 	Shell::LoadFonts();
 
 	auto demo_window = Rml::MakeUnique<DemoWindow>("Data binding", context);
@@ -512,9 +509,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	demo_window->Shutdown();

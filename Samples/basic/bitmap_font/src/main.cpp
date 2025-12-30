@@ -28,7 +28,6 @@
 
 #include "FontEngineInterfaceBitmap.h"
 #include <RmlUi/Core.h>
-#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -83,8 +82,6 @@ int main(int /*argc*/, char** /*argv*/)
 		return -1;
 	}
 
-	Rml::Debugger::Initialise(context);
-
 	// Load bitmap font
 	if (!Rml::LoadFontFace("basic/bitmap_font/data/Comfortaa_Regular_22.fnt"))
 	{
@@ -110,9 +107,12 @@ int main(int /*argc*/, char** /*argv*/)
 
 		context->Update();
 
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
+		if (context->NeedsRender())
+		{
+			Backend::BeginFrame();
+			context->Render();
+			Backend::PresentFrame();
+		}
 	}
 
 	// Shutdown RmlUi.

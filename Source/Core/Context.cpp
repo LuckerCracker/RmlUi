@@ -126,6 +126,8 @@ Context::Context(const String& name, RenderManager* render_manager, TextInputHan
 
 	mouse_active = false;
 	enable_cursor = true;
+	last_hover_update_mouse_position = Vector2i(-1, -1);
+	hover_chain_dirty = true;
 
 	scroll_controller = MakeUnique<ScrollController>();
 }
@@ -158,6 +160,8 @@ void Context::SetDimensions(const Vector2i _dimensions)
 		render_manager->SetViewport(dimensions);
 		root->SetBox(Box(Vector2f(dimensions)));
 		root->DirtyLayout();
+		RequestFullRedraw();
+		hover_chain_dirty = true;
 
 		for (int i = 0; i < root->GetNumChildren(); ++i)
 		{
@@ -184,6 +188,8 @@ void Context::SetDensityIndependentPixelRatio(float dp_ratio)
 	if (density_independent_pixel_ratio != dp_ratio)
 	{
 		density_independent_pixel_ratio = dp_ratio;
+		RequestFullRedraw();
+		hover_chain_dirty = true;
 
 		for (int i = 0; i < root->GetNumChildren(true); ++i)
 		{
@@ -206,39 +212,70 @@ bool Context::Update()
 {
 	RMLUI_ZoneScoped;
 	DebugVerifyLocaleSetting();
+	animations_active_previous = animations_active;
+	animations_active = false;
+	full_redraw_once_per_frame = false;
 
 	next_update_timeout = std::numeric_limits<double>::infinity();
 
-	if (scroll_controller->Update(mouse_position, density_independent_pixel_ratio))
-		RequestNextUpdate(0);
-
-	// Update the hover chain to detect any new or moved elements under the mouse.
-	if (mouse_active)
-		UpdateHoverChain(mouse_position);
-
-	// Update all the data models before updating properties and layout.
-	for (auto& data_model : data_models)
-		data_model.second->Update(true);
-
-	// The style definition of each document should be independent of each other. By manually resetting these flags we avoid unnecessary definition
-	// lookups in unrelated documents, such as when adding a new document. Adding an element dirties the parent definition, which in this case is the
-	// root. By extension the definition of all the other documents are also dirtied, unnecessarily.
-	root->dirty_definition = false;
-	root->dirty_child_definitions = false;
-
-	root->Update(density_independent_pixel_ratio, Vector2f(dimensions));
-
-	for (int i = 0; i < root->GetNumChildren(); ++i)
 	{
-		if (auto doc = root->GetChild(i)->GetOwnerDocument())
+		RMLUI_ZoneScopedN("Context::Update.Scroll");
+		if (scroll_controller->Update(mouse_position, density_independent_pixel_ratio))
 		{
-			doc->UpdateLayout();
-			doc->UpdatePosition();
+			RequestNextUpdate(0);
+			RequestRender();
 		}
 	}
 
-	// Release any documents that were unloaded during the update.
-	ReleaseUnloadedDocuments();
+	{
+		RMLUI_ZoneScopedN("Context::Update.Hover");
+		// Update the hover chain only when the mouse moves or element geometry changes.
+		if (mouse_active && (hover_chain_dirty || mouse_position != last_hover_update_mouse_position))
+		{
+			UpdateHoverChain(last_hover_update_mouse_position);
+			last_hover_update_mouse_position = mouse_position;
+			hover_chain_dirty = false;
+		}
+	}
+
+	{
+		RMLUI_ZoneScopedN("Context::Update.DataModels");
+		// Update all the data models before updating properties and layout.
+		for (auto& data_model : data_models)
+			data_model.second->Update(true);
+	}
+
+	{
+		RMLUI_ZoneScopedN("Context::Update.Root");
+		// The style definition of each document should be independent of each other. By manually resetting these flags we avoid unnecessary definition
+		// lookups in unrelated documents, such as when adding a new document. Adding an element dirties the parent definition, which in this case is the
+		// root. By extension the definition of all the other documents are also dirtied, unnecessarily.
+		root->dirty_definition = false;
+		root->dirty_child_definitions = false;
+
+		root->Update(density_independent_pixel_ratio, Vector2f(dimensions));
+	}
+
+	{
+		RMLUI_ZoneScopedN("Context::Update.Documents");
+		for (int i = 0; i < root->GetNumChildren(); ++i)
+		{
+			if (auto doc = root->GetChild(i)->GetOwnerDocument())
+			{
+				doc->UpdateLayout();
+				doc->UpdatePosition();
+			}
+		}
+	}
+
+	{
+		RMLUI_ZoneScopedN("Context::Update.Release");
+		// Release any documents that were unloaded during the update.
+		ReleaseUnloadedDocuments();
+	}
+
+	if (!animations_active && animations_active_previous)
+		InvalidatePaintedBounds();
 
 	return true;
 }
@@ -246,6 +283,20 @@ bool Context::Update()
 bool Context::Render()
 {
 	RMLUI_ZoneScoped;
+
+#ifdef RMLUI_DEBUG_DAMAGE
+	if (debug_dirty_since_render)
+	{
+		debug_no_change_frames = 0;
+		debug_dirty_since_render = false;
+	}
+	else
+	{
+		debug_no_change_frames++;
+	}
+	debug_bounds_log_budget = 2;
+	Log::Message(Log::LT_DEBUG, "[damage] Context::Render called, no_change_frames=%d", debug_no_change_frames);
+#endif
 
 	render_manager->PrepareRender(dimensions);
 
@@ -262,7 +313,364 @@ bool Context::Render()
 
 	render_manager->ResetState();
 
+	ClearRenderRequests();
+
 	return true;
+}
+
+#ifdef RMLUI_DEBUG_DAMAGE
+void Context::DebugNotifyDirty(const Element* element, const char* reason)
+{
+	debug_dirty_since_render = true;
+	debug_no_change_frames = 0;
+	const String element_address = element ? element->GetAddress() : String("<null>");
+	Log::Message(Log::LT_DEBUG, "[damage] Dirty reason=%s element=%s", reason, element_address.c_str());
+}
+
+bool Context::DebugConsumeBoundsLogBudget()
+{
+	if (debug_bounds_log_budget <= 0)
+		return false;
+	debug_bounds_log_budget--;
+	return true;
+}
+#endif
+
+void Context::DamageRegion::AddRect(Rectanglei rect)
+{
+	if (!rect.Valid() || rect.Width() <= 0 || rect.Height() <= 0)
+		return;
+	rects.push_back(rect);
+	last_area_percent = 0.f;
+	area_dirty = true;
+}
+
+void Context::DamageRegion::MergeOverlaps(size_t max_rects, int merge_distance_px)
+{
+	if (rects.size() < 2)
+		return;
+
+	Vector<Rectanglei> merged;
+	merged.reserve(rects.size());
+
+	for (const Rectanglei& rect : rects)
+	{
+		Rectanglei current = rect;
+		bool merged_any = true;
+		while (merged_any)
+		{
+			merged_any = false;
+			for (size_t i = 0; i < merged.size(); i++)
+			{
+				const Rectanglei expanded = merged[i].Extend(Vector2i(merge_distance_px));
+				if (expanded.Intersects(current))
+				{
+					current = merged[i].Join(current);
+					merged.erase(merged.begin() + (int)i);
+					merged_any = true;
+					break;
+				}
+			}
+		}
+		merged.push_back(current);
+	}
+
+	rects = std::move(merged);
+	area_dirty = true;
+
+	if (max_rects > 0 && rects.size() > max_rects)
+	{
+		Rectanglei all = rects.front();
+		for (size_t i = 1; i < rects.size(); i++)
+			all = all.Join(rects[i]);
+		rects.clear();
+		rects.push_back(all);
+		area_dirty = true;
+	}
+}
+
+float Context::DamageRegion::ComputeAreaPercent(Vector2i viewport_size)
+{
+	const float viewport_area = float(viewport_size.x) * float(viewport_size.y);
+	if (viewport_area <= 0.f)
+		return 0.f;
+
+	double area_sum = 0.0;
+	for (const Rectanglei& rect : rects)
+		area_sum += double(rect.Width()) * double(rect.Height());
+
+	const double capped = Math::Min(area_sum, double(viewport_area));
+	last_area_percent = float(capped * 100.0 / double(viewport_area));
+	area_dirty = false;
+	return last_area_percent;
+}
+
+bool Context::DamageRegion::ShouldFullRedraw(float threshold_area_percent, size_t threshold_rect_count, Vector2i viewport_size)
+{
+	if (threshold_rect_count > 0 && rects.size() >= threshold_rect_count)
+		return true;
+	if (area_dirty)
+		ComputeAreaPercent(viewport_size);
+	return last_area_percent >= threshold_area_percent;
+}
+
+void Context::DamageRegion::Clear()
+{
+	rects.clear();
+	last_area_percent = 0.f;
+	area_dirty = true;
+}
+
+bool Context::NeedsRender() const
+{
+	const bool has_animation_or_timers = (next_update_timeout == 0.0);
+	const bool has_damage = !damage_region.rects.empty();
+	const bool has_render_request = render_requested;
+	const bool needs_render = (force_full_redraw || has_damage || has_animation_or_timers || has_render_request);
+
+#ifdef RMLUI_DEBUG_DAMAGE
+	if (needs_render)
+	{
+		const char* reason = force_full_redraw ? "full" :
+			(has_damage ? "damage" :
+				(has_animation_or_timers ? "animation" : "request"));
+		Log::Message(Log::LT_DEBUG, "[damage] NeedsRender=true reason=%s", reason);
+	}
+	else
+	{
+		Log::Message(Log::LT_DEBUG, "[damage] NeedsRender=false");
+	}
+#endif
+
+	return needs_render;
+}
+
+void Context::SetForceFullRedraw(bool force)
+{
+	force_full_redraw = force;
+	if (force_full_redraw)
+		RequestRender();
+}
+
+void Context::RequestFullRedraw()
+{
+	SetForceFullRedraw(true);
+}
+
+void Context::ClearRenderRequests()
+{
+	render_requested = false;
+	force_full_redraw = false;
+	damage_region.Clear();
+	damage_merge_pending = false;
+	damage_generation++;
+	damage_dirty_event_generation = damage_generation;
+	damage_dirty_event_count = 0;
+	full_redraw_once_per_frame = false;
+}
+
+void Context::RequestRender()
+{
+	render_requested = true;
+}
+
+void Context::NotifyHoverChainDirty()
+{
+	hover_chain_dirty = true;
+}
+
+void Context::NotifyAnimationActive()
+{
+	animations_active = true;
+}
+
+void Context::RequestFullRedrawOncePerFrame()
+{
+	if (!full_redraw_once_per_frame)
+	{
+		full_redraw_once_per_frame = true;
+		RequestFullRedraw();
+	}
+}
+
+void Context::InvalidatePaintedBounds()
+{
+	painted_bounds_generation++;
+}
+
+bool Context::RegisterDirtyEvent()
+{
+	if (damage_dirty_event_generation != damage_generation)
+	{
+		damage_dirty_event_generation = damage_generation;
+		damage_dirty_event_count = 0;
+	}
+
+	damage_dirty_event_count++;
+	size_t threshold = damage_full_redraw_rect_count;
+	if (animations_active && threshold > 0)
+	{
+		threshold = threshold / 8;
+		if (threshold < 1)
+			threshold = 1;
+	}
+	if (threshold > 0 && damage_dirty_event_count > threshold)
+	{
+		RequestFullRedraw();
+		return false;
+	}
+	return true;
+}
+
+bool Context::IsAnimationActive() const
+{
+	return animations_active;
+}
+
+uint64_t Context::GetPaintedBoundsGeneration() const
+{
+	return painted_bounds_generation;
+}
+
+const Context::DamageRegion& Context::GetDamageRegion() const
+{
+	const_cast<Context*>(this)->FinalizeDamageRegion();
+	return damage_region;
+}
+
+Context::DamageRegion Context::TakeDamageRegion()
+{
+	FinalizeDamageRegion();
+	DamageRegion result = std::move(damage_region);
+	damage_region.Clear();
+	return result;
+}
+
+const Vector<Rectanglei>& Context::GetDebugDamageRects() const
+{
+	return damage_region.rects;
+}
+
+float Context::GetDamageAreaPercent() const
+{
+	const_cast<Context*>(this)->FinalizeDamageRegion();
+	if (damage_region.area_dirty)
+		const_cast<DamageRegion&>(damage_region).ComputeAreaPercent(dimensions);
+	return damage_region.last_area_percent;
+}
+
+bool Context::GetDamageFullRedrawSuggested() const
+{
+	const_cast<Context*>(this)->FinalizeDamageRegion();
+	return const_cast<DamageRegion&>(damage_region)
+		.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions);
+}
+
+uint64_t Context::GetDamageGeneration() const
+{
+	return damage_generation;
+}
+
+bool Context::IsFullRedrawPending() const
+{
+	if (force_full_redraw)
+		return true;
+	if (damage_region.rects.size() == 1)
+	{
+		const Rectanglei full = Rectanglei::FromSize(dimensions);
+		return damage_region.rects[0] == full;
+	}
+	return false;
+}
+
+void Context::SetDamageMergeDistance(int distance_px)
+{
+	damage_merge_distance_px = Math::Max(0, distance_px);
+}
+
+void Context::SetDamageMaxRects(size_t max_rects)
+{
+	damage_max_rects = max_rects;
+}
+
+void Context::SetDamageFullRedrawThresholds(float area_percent, size_t rect_count)
+{
+	damage_full_redraw_area_percent = Math::Clamp(area_percent, 0.f, 100.f);
+	damage_full_redraw_rect_count = rect_count;
+}
+
+int Context::GetDamageMergeDistance() const
+{
+	return damage_merge_distance_px;
+}
+
+size_t Context::GetDamageMaxRects() const
+{
+	return damage_max_rects;
+}
+
+float Context::GetDamageFullRedrawAreaThreshold() const
+{
+	return damage_full_redraw_area_percent;
+}
+
+size_t Context::GetDamageFullRedrawRectThreshold() const
+{
+	return damage_full_redraw_rect_count;
+}
+
+bool Context::AddDamageRect(Rectanglei rect, const Element* element, const char* reason)
+{
+#ifndef RMLUI_DEBUG_DAMAGE
+	(void)element;
+	(void)reason;
+#endif
+	if (force_full_redraw)
+	{
+		RequestRender();
+		return false;
+	}
+	if (rect.Valid())
+		rect = rect.Intersect(Rectanglei::FromSize(dimensions));
+	if (!rect.Valid() || rect.Width() <= 0 || rect.Height() <= 0)
+		return false;
+
+	damage_region.AddRect(rect);
+	RequestRender();
+
+	if (damage_region.rects.size() > damage_full_redraw_rect_count)
+	{
+		force_full_redraw = true;
+		damage_region.Clear();
+		damage_merge_pending = false;
+		damage_region.AddRect(Rectanglei::FromSize(dimensions));
+		return true;
+	}
+
+	if (damage_merge_distance_px >= 0 && damage_region.rects.size() > damage_max_rects)
+		damage_merge_pending = true;
+
+#ifdef RMLUI_DEBUG_DAMAGE
+	const String element_address = element ? element->GetAddress() : String("<null>");
+	Log::Message(Log::LT_DEBUG, "[damage] DamageAdd: reason=%s element=%s rect=(%d,%d)-(%d,%d)", reason, element_address.c_str(), rect.Left(),
+		rect.Top(), rect.Right(), rect.Bottom());
+	const float area_percent = damage_region.ComputeAreaPercent(dimensions);
+	const bool full_redraw = force_full_redraw ||
+		damage_region.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions);
+	Log::Message(Log::LT_DEBUG, "[damage] DamageSummary: rects=%zu area%%=%.2f full_redraw=%d", damage_region.rects.size(), area_percent,
+		full_redraw ? 1 : 0);
+#endif
+
+	return true;
+}
+
+void Context::FinalizeDamageRegion()
+{
+	if (!damage_merge_pending)
+		return;
+	damage_merge_pending = false;
+	if (damage_merge_distance_px >= 0 && damage_region.rects.size() > damage_max_rects)
+		damage_region.MergeOverlaps(damage_max_rects, damage_merge_distance_px);
 }
 
 ElementDocument* Context::CreateDocument(const String& instancer_name)
@@ -287,6 +695,7 @@ ElementDocument* Context::CreateDocument(const String& instancer_name)
 	root->AppendChild(std::move(element));
 
 	PluginRegistry::NotifyDocumentLoad(document);
+	RequestFullRedraw();
 
 	return document;
 }
@@ -330,6 +739,7 @@ ElementDocument* Context::LoadDocument(Stream* stream)
 		data_model.second->Update(false);
 
 	document->UpdateDocument();
+	RequestFullRedraw();
 
 	return document;
 }
@@ -400,6 +810,7 @@ void Context::UnloadDocument(ElementDocument* _document)
 
 	// Rebuild the hover state.
 	UpdateHoverChain(mouse_position);
+	RequestFullRedraw();
 }
 
 void Context::UnloadAllDocuments()
@@ -412,6 +823,7 @@ void Context::UnloadAllDocuments()
 	active_chain.clear();
 	hover_chain.clear();
 	drag_hover_chain.clear();
+	RequestFullRedraw();
 }
 
 void Context::EnableMouseCursor(bool enable)
@@ -550,6 +962,8 @@ void Context::RemoveEventListener(const String& event, EventListener* listener, 
 
 bool Context::ProcessKeyDown(Input::KeyIdentifier key_identifier, int key_modifier_state)
 {
+	RequestRender();
+
 	// Generate the parameters for the key event.
 	Dictionary parameters;
 	GenerateKeyEventParameters(parameters, key_identifier);
@@ -563,6 +977,8 @@ bool Context::ProcessKeyDown(Input::KeyIdentifier key_identifier, int key_modifi
 
 bool Context::ProcessKeyUp(Input::KeyIdentifier key_identifier, int key_modifier_state)
 {
+	RequestRender();
+
 	// Generate the parameters for the key event.
 	Dictionary parameters;
 	GenerateKeyEventParameters(parameters, key_identifier);
@@ -591,6 +1007,8 @@ bool Context::ProcessTextInput(Character character)
 
 bool Context::ProcessTextInput(const String& string)
 {
+	RequestRender();
+
 	Element* target = (focus ? focus : root.get());
 
 	Dictionary parameters;
@@ -603,6 +1021,8 @@ bool Context::ProcessTextInput(const String& string)
 
 bool Context::ProcessMouseMove(int x, int y, int key_modifier_state)
 {
+	RequestRender();
+
 	// Check whether the mouse moved since the last event came through.
 	Vector2i old_mouse_position = mouse_position;
 	mouse_position = {x, y};
@@ -644,6 +1064,8 @@ static Element* FindFocusElement(Element* element)
 
 bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 {
+	RequestRender();
+
 	Dictionary parameters;
 	GenerateMouseEventParameters(parameters, button_index);
 	GenerateKeyModifierEventParameters(parameters, key_modifier_state);
@@ -748,6 +1170,8 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 {
+	RequestRender();
+
 	Dictionary parameters;
 	GenerateMouseEventParameters(parameters, button_index);
 	GenerateKeyModifierEventParameters(parameters, key_modifier_state);
@@ -827,6 +1251,8 @@ bool Context::ProcessMouseWheel(float wheel_delta, int key_modifier_state)
 
 bool Context::ProcessMouseWheel(Vector2f wheel_delta, int key_modifier_state)
 {
+	RequestRender();
+
 	if (scroll_controller->GetMode() == ScrollController::Mode::Autoscroll)
 	{
 		scroll_controller->Reset();
@@ -862,6 +1288,8 @@ bool Context::ProcessMouseWheel(Vector2f wheel_delta, int key_modifier_state)
 
 bool Context::ProcessMouseLeave()
 {
+	RequestRender();
+
 	mouse_active = false;
 
 	// Update the hover chain. Now that 'mouse_active' is disabled this will remove the hover state from all elements.
@@ -1288,6 +1716,7 @@ void Context::GenerateClickEvent(Element* element)
 
 void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_state, Dictionary* out_parameters, Dictionary* out_drag_parameters)
 {
+	RMLUI_ZoneScopedN("Context::UpdateHoverChain");
 	const Vector2f position(mouse_position);
 
 	Dictionary local_parameters, local_drag_parameters;
@@ -1326,7 +1755,10 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 		}
 	}
 
-	hover = mouse_active ? GetElementAtPoint(position) : nullptr;
+	{
+		RMLUI_ZoneScopedN("Context::UpdateHoverChain.GetElement");
+		hover = mouse_active ? GetElementAtPoint(position) : nullptr;
+	}
 
 	if (enable_cursor)
 	{
@@ -1356,13 +1788,19 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 	}
 
 	// Send mouseout / mouseover events.
-	SendEvents(hover_chain, new_hover_chain, EventId::Mouseout, parameters);
-	SendEvents(new_hover_chain, hover_chain, EventId::Mouseover, parameters);
+	{
+		RMLUI_ZoneScopedN("Context::UpdateHoverChain.SendEvents");
+		SendEvents(hover_chain, new_hover_chain, EventId::Mouseout, parameters);
+		SendEvents(new_hover_chain, hover_chain, EventId::Mouseover, parameters);
+	}
 
 	// Send out drag events.
 	if (drag && mouse_active)
 	{
-		drag_hover = GetElementAtPoint(position, drag);
+		{
+			RMLUI_ZoneScopedN("Context::UpdateHoverChain.GetElementDrag");
+			drag_hover = GetElementAtPoint(position, drag);
+		}
 
 		ElementSet new_drag_hover_chain;
 		element = drag_hover;
@@ -1375,8 +1813,11 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 		if (drag_started && drag_verbose)
 		{
 			// Send out ondragover and ondragout events as appropriate.
-			SendEvents(drag_hover_chain, new_drag_hover_chain, EventId::Dragout, drag_parameters);
-			SendEvents(new_drag_hover_chain, drag_hover_chain, EventId::Dragover, drag_parameters);
+			{
+				RMLUI_ZoneScopedN("Context::UpdateHoverChain.SendDragEvents");
+				SendEvents(drag_hover_chain, new_drag_hover_chain, EventId::Dragout, drag_parameters);
+				SendEvents(new_drag_hover_chain, drag_hover_chain, EventId::Dragover, drag_parameters);
+			}
 		}
 
 		drag_hover_chain.swap(new_drag_hover_chain);
@@ -1399,6 +1840,7 @@ void Context::ResetActiveChain()
 
 Element* Context::GetElementAtPoint(Vector2f point, const Element* ignore_element, Element* element) const
 {
+	RMLUI_ZoneScopedN("Context::GetElementAtPoint");
 	if (!element)
 	{
 		if (ignore_element == root.get())

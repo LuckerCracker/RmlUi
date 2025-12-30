@@ -52,6 +52,8 @@ public:
 	void InstanceEffects();
 
 	void RenderEffects(RenderStage render_stage);
+	// Extends bounds to account for filters' ink overflow (filters only, not backdrop-filter).
+	void ExtendInkOverflowBounds(Rectanglef& bounds);
 
 	// Mark effects as dirty and force them to reset themselves.
 	void DirtyEffects();

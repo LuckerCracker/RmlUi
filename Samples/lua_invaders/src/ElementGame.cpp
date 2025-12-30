@@ -81,6 +81,8 @@ void ElementGame::ProcessEvent(Rml::Event& event)
 void ElementGame::OnUpdate()
 {
 	game->Update(Rml::GetSystemInterface()->GetElapsedTime());
+	if (Rml::Context* context = GetContext())
+		context->RequestNextUpdate(0);
 
 	if (game->IsGameOver())
 		DispatchEvent("gameover", Rml::Dictionary());

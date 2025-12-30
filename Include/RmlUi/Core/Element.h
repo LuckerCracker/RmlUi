@@ -704,6 +704,8 @@ private:
 
 	void DirtyTransformState(bool perspective_dirty, bool transform_dirty);
 	void UpdateTransformState();
+	void AddDamageForDirty(const char* reason, bool needs_new_bounds);
+	void GetDamageBounds(Rectanglef& out_bounds);
 
 	void OnDpRatioChangeRecursive();
 	void DirtyFontFaceRecursive();

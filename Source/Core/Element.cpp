@@ -2984,6 +2984,17 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		return;
 	}
 
+	if (!needs_new_bounds && meta->last_painted_bounds_valid)
+	{
+		const Rectanglei bounds = Rectanglei(meta->last_painted_bounds);
+		const Rectanglei viewport = Rectanglei::FromSize(context->GetDimensions());
+		if (bounds.Valid() && !bounds.Intersects(viewport))
+		{
+			meta->damage_generation = context->GetDamageGeneration();
+			return;
+		}
+	}
+
 	if (!needs_new_bounds && meta->last_painted_bounds_valid && !context->damage_region.rects.empty())
 	{
 		const Rectanglei bounds = Rectanglei(meta->last_painted_bounds);

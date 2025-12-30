@@ -32,6 +32,9 @@
 #include "../../Include/RmlUi/Core/ElementInstancer.h"
 #include "../../Include/RmlUi/Core/ElementUtilities.h"
 #include "../../Include/RmlUi/Core/Factory.h"
+#include "../../Include/RmlUi/Core/Math.h"
+#include "../../Include/RmlUi/Core/RenderManager.h"
+#include "../../Include/RmlUi/Core/SystemInterface.h"
 #include "../../Include/RmlUi/Core/Types.h"
 #include "DebuggerSystemInterface.h"
 #include "ElementContextHook.h"
@@ -189,6 +192,76 @@ void DebuggerPlugin::Render()
 	{
 		info_element->RenderHoverElement();
 		info_element->RenderSourceElement();
+	}
+
+	if (render_outlines && debug_context)
+	{
+		const double now_time = (GetSystemInterface() ? GetSystemInterface()->GetElapsedTime() : 0.0);
+		float dt = 0.f;
+		if (damage_overlay_last_time > 0.0)
+			dt = (float)(now_time - damage_overlay_last_time);
+		damage_overlay_last_time = now_time;
+
+		const auto& damage_region = debug_context->GetDamageRegion();
+		if (!damage_region.rects.empty())
+		{
+			DamageOverlayFrame frame;
+			frame.rects = damage_region.rects;
+			frame.time_left = damage_overlay_hold_seconds;
+			damage_overlay_frames.push_back(std::move(frame));
+			damage_overlay_force_redraw_time = Math::Max(damage_overlay_force_redraw_time, damage_overlay_hold_seconds);
+		}
+
+		if (!damage_overlay_frames.empty())
+		{
+			RenderManager& render_manager = debug_context->GetRenderManager();
+			const LayerHandle overlay_layer = render_manager.PushLayer();
+			render_manager.SetTransform(nullptr);
+			render_manager.DisableScissorRegion();
+			render_manager.DisableClipMask();
+
+			for (const DamageOverlayFrame& frame : damage_overlay_frames)
+			{
+				const float t = (damage_overlay_hold_seconds > 0.f ? frame.time_left / damage_overlay_hold_seconds : 0.f);
+				const int fill_alpha = Math::RoundToInteger(64.f * t);
+				const int outline_alpha = Math::RoundToInteger(220.f * t);
+				const Colourb fill_colour(0, 255, 0, (byte)Math::Clamp(fill_alpha, 0, 255));
+				const Colourb outline_colour(0, 255, 0, (byte)Math::Clamp(outline_alpha, 0, 255));
+
+				for (const Rectanglei& rect : frame.rects)
+				{
+					if (!rect.Valid())
+						continue;
+					const Vector2f origin((float)rect.Left(), (float)rect.Top());
+					const Vector2f size((float)rect.Width(), (float)rect.Height());
+					Geometry::RenderBox(origin, size, fill_colour);
+					Geometry::RenderOutline(origin, size, outline_colour, 1);
+				}
+			}
+
+			render_manager.CompositeLayers(overlay_layer, render_manager.GetNextLayer(), BlendMode::Blend, {});
+			render_manager.PopLayer();
+		}
+
+		if (dt < 0.f)
+			dt = 0.f;
+		if (dt > 0.5f)
+			dt = 0.5f;
+
+		for (auto it = damage_overlay_frames.begin(); it != damage_overlay_frames.end();)
+		{
+			it->time_left -= dt;
+			if (it->time_left <= 0.f)
+				it = damage_overlay_frames.erase(it);
+			else
+				++it;
+		}
+
+		if (damage_overlay_force_redraw_time > 0.f)
+		{
+			debug_context->RequestFullRedraw();
+			damage_overlay_force_redraw_time -= dt;
+		}
 	}
 }
 

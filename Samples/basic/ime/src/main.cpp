@@ -28,6 +28,7 @@
 
 #include "SystemFontWin32.h"
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <PlatformExtensions.h>
 #include <RmlUi_Backend.h>
 #include <RmlUi_Include_Windows.h>
@@ -84,11 +85,14 @@ int APIENTRY WinMain(HINSTANCE /*instance_handle*/, HINSTANCE /*previous_instanc
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (!context)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
+
 
 	// Load required fonts with support for most character sets.
 	LoadFonts();
@@ -113,6 +117,7 @@ int APIENTRY WinMain(HINSTANCE /*instance_handle*/, HINSTANCE /*previous_instanc
 		}
 	}
 
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

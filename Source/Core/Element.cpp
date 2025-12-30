@@ -238,26 +238,50 @@ void Element::Render()
 	// Apply our transform
 	ElementUtilities::ApplyTransform(*this);
 
-	meta->effects.RenderEffects(RenderStage::Enter);
-
-	// Set up the clipping region for this element.
-	if (ElementUtilities::SetClippingRegion(this))
+	bool skip_rendering = false;
+	if (!GetTransformState() || !GetTransformState()->GetTransform())
 	{
-		meta->background_border.Render(this);
-		meta->effects.RenderEffects(RenderStage::Decoration);
-
+		if (GetTagName() != "#text")
 		{
-			RMLUI_ZoneScopedNC("OnRender", 0x228B22);
-
-			OnRender();
+			Rectanglei clip_region;
+			if (ElementUtilities::GetClippingRegion(this, clip_region))
+			{
+				Rectanglef bounds;
+				if (ElementUtilities::GetBoundingBox(bounds, this, BoxArea::Auto))
+				{
+					if (meta->computed_values.has_filter() || meta->computed_values.has_backdrop_filter())
+						meta->effects.ExtendInkOverflowBounds(bounds);
+					Math::ExpandToPixelGrid(bounds);
+					if (!Rectanglei(bounds).Intersects(clip_region))
+						skip_rendering = true;
+				}
+			}
 		}
 	}
 
-	// Render all elements in our local stacking context.
-	for (Element* element : stacking_context)
-		element->Render();
+	if (!skip_rendering)
+	{
+		meta->effects.RenderEffects(RenderStage::Enter);
 
-	meta->effects.RenderEffects(RenderStage::Exit);
+		// Set up the clipping region for this element.
+		if (ElementUtilities::SetClippingRegion(this))
+		{
+			meta->background_border.Render(this);
+			meta->effects.RenderEffects(RenderStage::Decoration);
+
+			{
+				RMLUI_ZoneScopedNC("OnRender", 0x228B22);
+
+				OnRender();
+			}
+		}
+
+		// Render all elements in our local stacking context.
+		for (Element* element : stacking_context)
+			element->Render();
+
+		meta->effects.RenderEffects(RenderStage::Exit);
+	}
 
 	if (Context* ctx = (owner_document ? owner_document->GetContext() : nullptr))
 	{
@@ -2095,7 +2119,7 @@ Element* Element::GetClosestScrollableContainer()
 
 void Element::ProcessDefaultAction(Event& event)
 {
-	if (event == EventId::Mousedown)
+	if (event == EventId::Mousedown && event.GetPhase() == EventPhase::Target)
 	{
 		const Vector2f mouse_pos(event.GetParameter("mouse_x", 0.f), event.GetParameter("mouse_y", 0.f));
 
@@ -2944,12 +2968,6 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		if (needs_new_bounds)
 			meta->damage_needs_new_bounds = true;
 		context->RequestRender();
-		return;
-	}
-
-	if (context->IsAnimationActive())
-	{
-		context->RequestFullRedrawOncePerFrame();
 		return;
 	}
 

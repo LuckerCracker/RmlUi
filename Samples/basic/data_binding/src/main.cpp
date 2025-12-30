@@ -27,6 +27,7 @@
  */
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 #include <numeric>
@@ -483,11 +484,13 @@ int main(int /*argc*/, char** /*argv*/)
 		|| !FormsExample::Initialize(context)    //
 	)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
 	Shell::LoadFonts();
 
 	auto demo_window = Rml::MakeUnique<DemoWindow>("Data binding", context);
@@ -520,6 +523,7 @@ int main(int /*argc*/, char** /*argv*/)
 	demo_window->Shutdown();
 
 	// Shutdown RmlUi.
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

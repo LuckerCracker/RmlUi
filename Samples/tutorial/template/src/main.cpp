@@ -10,6 +10,7 @@
  */
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -45,11 +46,14 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (!context)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
+
 	Shell::LoadFonts();
 
 	// Load and show the tutorial document.
@@ -72,6 +76,7 @@ int main(int /*argc*/, char** /*argv*/)
 	}
 
 	// Shutdown RmlUi.
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

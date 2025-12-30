@@ -27,6 +27,7 @@
  */
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 #include <cmath>
@@ -132,11 +133,14 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (!context)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
+
 	Shell::LoadFonts();
 
 	Rml::UniquePtr<DemoWindow> window_1 = Rml::MakeUnique<DemoWindow>("Orthographic transform", Rml::Vector2f(120, 180), context);
@@ -184,6 +188,7 @@ int main(int /*argc*/, char** /*argv*/)
 	window_2.reset();
 
 	// Shutdown RmlUi.
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

@@ -27,6 +27,7 @@
  */
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
 
@@ -90,11 +91,13 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (context == nullptr)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
 
 	Rml::String svg_data;
 	Rml::DataModelConstructor dm_con = context->CreateDataModel("svg_test_model");
@@ -140,6 +143,7 @@ int main(int /*argc*/, char** /*argv*/)
 	}
 
 	// Shutdown RmlUi.
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

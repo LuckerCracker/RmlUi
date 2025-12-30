@@ -28,6 +28,7 @@
 
 #include "FileBrowser.h"
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <PlatformExtensions.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
@@ -64,11 +65,14 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (!context)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
+
 	Shell::LoadFonts();
 
 	// Create the file data source and formatter.
@@ -98,6 +102,7 @@ int main(int /*argc*/, char** /*argv*/)
 		}
 	}
 
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

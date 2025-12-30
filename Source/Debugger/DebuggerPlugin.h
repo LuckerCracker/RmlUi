@@ -31,6 +31,7 @@
 
 #include "../../Include/RmlUi/Core/EventListener.h"
 #include "../../Include/RmlUi/Core/Plugin.h"
+#include "../../Include/RmlUi/Core/Types.h"
 
 namespace Rml {
 
@@ -126,6 +127,14 @@ private:
 		data_explorer_element_instancer;
 
 	bool render_outlines;
+	static constexpr float damage_overlay_hold_seconds = 1.0f;
+	struct DamageOverlayFrame {
+		Vector<Rectanglei> rects;
+		float time_left = 0.f;
+	};
+	Vector<DamageOverlayFrame> damage_overlay_frames;
+	float damage_overlay_force_redraw_time = 0.f;
+	double damage_overlay_last_time = 0.0;
 
 	// Singleton instance
 	static DebuggerPlugin* instance;

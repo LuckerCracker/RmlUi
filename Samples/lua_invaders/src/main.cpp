@@ -32,6 +32,7 @@
 #include "HighScores.h"
 #include "LuaInterface.h"
 #include <RmlUi/Core.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi/Lua.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
@@ -73,6 +74,7 @@ int main(int /*argc*/, char** /*argv*/)
 	context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (context == nullptr)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
@@ -80,6 +82,7 @@ int main(int /*argc*/, char** /*argv*/)
 	}
 
 	// Initialise the RmlUi debugger.
+	Rml::Debugger::Initialise(context);
 
 	// Load the font faces required for Invaders.
 	Shell::LoadFonts();
@@ -116,6 +119,7 @@ int main(int /*argc*/, char** /*argv*/)
 	HighScores::Shutdown();
 
 	// Shutdown RmlUi.
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

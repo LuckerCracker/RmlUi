@@ -499,7 +499,7 @@ private:
 	int damage_merge_distance_px = 2;
 	size_t damage_max_rects = 32;
 	float damage_full_redraw_area_percent = 60.f;
-	size_t damage_full_redraw_rect_count = 64;
+	size_t damage_full_redraw_rect_count = 128;
 	bool damage_merge_pending = false;
 
 	// Internal callback for when an element is detached or removed from the hierarchy.

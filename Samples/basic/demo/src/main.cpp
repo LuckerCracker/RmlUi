@@ -29,6 +29,7 @@
 #include "DemoEventListener.h"
 #include "DemoWindow.h"
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Debugger.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi_Backend.h>
 #include <Shell.h>
@@ -65,11 +66,14 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(width, height));
 	if (!context)
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
+	Rml::Debugger::Initialise(context);
+
 
 	Shell::LoadFonts();
 
@@ -80,6 +84,7 @@ int main(int /*argc*/, char** /*argv*/)
 
 	if (!demo_window.Initialize("Demo sample", context))
 	{
+		Rml::Debugger::Shutdown();
 		Rml::Shutdown();
 		Backend::Shutdown();
 		Shell::Shutdown();
@@ -108,6 +113,7 @@ int main(int /*argc*/, char** /*argv*/)
 
 	demo_window.Shutdown();
 
+	Rml::Debugger::Shutdown();
 	Rml::Shutdown();
 
 	Backend::Shutdown();

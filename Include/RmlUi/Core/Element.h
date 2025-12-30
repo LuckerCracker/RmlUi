@@ -691,6 +691,8 @@ private:
 
 	void DirtyAbsoluteOffset();
 	void DirtyAbsoluteOffsetRecursive();
+	void MarkPaintedBoundsDirtyRecursive();
+	void OnScrollOffsetChanged();
 	void UpdateAbsoluteOffsetAndRenderBoxData();
 	void UpdateOffset();
 	void SetBaseline(float baseline);

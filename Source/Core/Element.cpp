@@ -1085,7 +1085,7 @@ void Element::SetScrollLeft(float scroll_left)
 	{
 		scroll_offset.x = new_offset;
 		meta->scroll.UpdateScrollbar(ElementScroll::HORIZONTAL);
-		DirtyAbsoluteOffset();
+		OnScrollOffsetChanged();
 
 		DispatchEvent(EventId::Scroll, Dictionary());
 	}
@@ -1103,7 +1103,7 @@ void Element::SetScrollTop(float scroll_top)
 	{
 		scroll_offset.y = new_offset;
 		meta->scroll.UpdateScrollbar(ElementScroll::VERTICAL);
-		DirtyAbsoluteOffset();
+		OnScrollOffsetChanged();
 
 		DispatchEvent(EventId::Scroll, Dictionary());
 	}
@@ -2340,6 +2340,21 @@ void Element::DirtyAbsoluteOffsetRecursive()
 		children[i]->DirtyAbsoluteOffsetRecursive();
 }
 
+void Element::MarkPaintedBoundsDirtyRecursive()
+{
+	meta->painted_bounds_dirty = true;
+	for (size_t i = 0; i < children.size(); i++)
+		children[i]->MarkPaintedBoundsDirtyRecursive();
+}
+
+void Element::OnScrollOffsetChanged()
+{
+	if (Context* context = GetContext())
+		context->NotifyScrollDamage(this);
+	MarkPaintedBoundsDirtyRecursive();
+	DirtyAbsoluteOffsetRecursive();
+}
+
 void Element::UpdateOffset()
 {
 	using namespace Style;
@@ -2993,6 +3008,15 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		return;
 	}
 
+	if (context->IsDescendantOfScrollDamageContainer(this))
+	{
+		if (want_new_bounds)
+			meta->painted_bounds_dirty = true;
+		if (needs_new_bounds)
+			meta->damage_needs_new_bounds = true;
+		return;
+	}
+
 	if (!needs_new_bounds && meta->last_painted_bounds_valid)
 	{
 		const Rectanglei bounds = Rectanglei(meta->last_painted_bounds);
@@ -3004,7 +3028,7 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		}
 	}
 
-	if (!needs_new_bounds && meta->last_painted_bounds_valid && !context->damage_region.rects.empty())
+	if (meta->last_painted_bounds_valid && !context->damage_region.rects.empty())
 	{
 		const Rectanglei bounds = Rectanglei(meta->last_painted_bounds);
 		if (bounds.Valid())
@@ -3017,6 +3041,11 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 					existing.Bottom() >= bounds.Bottom())
 				{
 					meta->damage_generation = context->GetDamageGeneration();
+					if (needs_new_bounds)
+					{
+						meta->damage_needs_new_bounds = true;
+						meta->painted_bounds_dirty = true;
+					}
 					return;
 				}
 			}

@@ -465,6 +465,8 @@ void Context::ClearRenderRequests()
 	force_full_redraw = false;
 	damage_region.Clear();
 	animation_damage_rects.clear();
+	scroll_damage_containers.clear();
+	scroll_damage_generation = 0;
 	damage_merge_pending = false;
 	damage_generation++;
 	damage_dirty_event_generation = damage_generation;
@@ -485,6 +487,46 @@ void Context::NotifyHoverChainDirty()
 void Context::NotifyAnimationActive()
 {
 	animations_active = true;
+}
+
+void Context::NotifyScrollDamage(Element* element)
+{
+	if (!element)
+		return;
+
+	if (scroll_damage_generation != damage_generation)
+	{
+		scroll_damage_generation = damage_generation;
+		scroll_damage_containers.clear();
+	}
+
+	if (std::find(scroll_damage_containers.begin(), scroll_damage_containers.end(), element) == scroll_damage_containers.end())
+		scroll_damage_containers.push_back(element);
+
+	Rectanglef rect = Rectanglef::MakeInvalid();
+	const BoxArea clip_area = element->GetClipArea();
+	const Vector2f offset = element->GetAbsoluteOffset(clip_area);
+	const Vector2f size = element->GetRenderBox(clip_area).GetFillSize();
+	rect = Rectanglef::FromPositionSize(offset, size);
+	Math::ExpandToPixelGrid(rect);
+	AddDamageRect(Rectanglei(rect), element, "scroll");
+}
+
+bool Context::IsDescendantOfScrollDamageContainer(const Element* element) const
+{
+	if (scroll_damage_containers.empty() || !element)
+		return false;
+
+	for (const Element* ancestor = element->GetParentNode(); ancestor; ancestor = ancestor->GetParentNode())
+	{
+		for (const Element* container : scroll_damage_containers)
+		{
+			if (ancestor == container)
+				return true;
+		}
+	}
+
+	return false;
 }
 
 void Context::RequestFullRedrawOncePerFrame()

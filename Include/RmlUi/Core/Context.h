@@ -386,6 +386,8 @@ private:
 	void InvalidatePaintedBounds();
 	bool AddDamageRect(Rectanglei rect, const Element* element, const char* reason);
 	bool AddAnimationDamageRect(Rectanglei rect, const Element* element, const char* reason);
+	void NotifyScrollDamage(Element* element);
+	bool IsDescendantOfScrollDamageContainer(const Element* element) const;
 	void FinalizeDamageRegion();
 	uint64_t GetDamageGeneration() const;
 	bool IsFullRedrawPending() const;
@@ -500,10 +502,12 @@ private:
 	uint64_t damage_dirty_event_generation = 0;
 	size_t damage_dirty_event_count = 0;
 	uint64_t painted_bounds_generation = 0;
+	Vector<Element*> scroll_damage_containers;
+	uint64_t scroll_damage_generation = 0;
 	int damage_merge_distance_px = 2;
 	size_t damage_max_rects = 32;
 	float damage_full_redraw_area_percent = 60.f;
-	size_t damage_full_redraw_rect_count = 128;
+	size_t damage_full_redraw_rect_count = 64;
 	bool damage_merge_pending = false;
 
 	// Internal callback for when an element is detached or removed from the hierarchy.

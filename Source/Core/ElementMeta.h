@@ -56,6 +56,9 @@ struct ElementMeta {
 	Style::ComputedValues computed_values;
 	Rectanglef last_painted_bounds = Rectanglef::MakeInvalid();
 	bool last_painted_bounds_valid = false;
+	Rectanglef damage_bounds_cache = Rectanglef::MakeInvalid();
+	uint64_t damage_bounds_cache_generation = 0;
+	bool damage_bounds_cache_valid = false;
 	bool damage_needs_new_bounds = false;
 	bool painted_bounds_dirty = true;
 	uint64_t damage_generation = 0;

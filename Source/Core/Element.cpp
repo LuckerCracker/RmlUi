@@ -556,6 +556,7 @@ void Element::SetBox(const Box& box)
 		additional_boxes.clear();
 
 		OnResize();
+		meta->damage_bounds_cache_valid = false;
 		rounded_main_padding_size_dirty = true;
 		meta->background_border.DirtyBackground();
 		meta->background_border.DirtyBorder();
@@ -567,6 +568,7 @@ void Element::AddBox(const Box& box, Vector2f offset)
 {
 	additional_boxes.emplace_back(PositionedBox{box, offset});
 	OnResize();
+	meta->damage_bounds_cache_valid = false;
 	meta->background_border.DirtyBackground();
 	meta->background_border.DirtyBorder();
 	meta->effects.DirtyEffectsData();
@@ -2073,6 +2075,12 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 		dirty_transition = true;
 	}
 
+	if (changed_properties.Contains(PropertyId::BoxShadow) || changed_properties.Contains(PropertyId::Filter) ||
+		changed_properties.Contains(PropertyId::BackdropFilter))
+	{
+		meta->damage_bounds_cache_valid = false;
+	}
+
 	if (paint_dirty)
 		AddDamageForDirty("paint", false);
 }
@@ -2085,6 +2093,7 @@ void Element::OnChildRemove(Element* /*child*/) {}
 
 void Element::DirtyLayout()
 {
+	meta->damage_bounds_cache_valid = false;
 	AddDamageForDirty("layout", true);
 	if (Element* document = GetOwnerDocument())
 		document->DirtyLayout();
@@ -2321,6 +2330,7 @@ void Element::DirtyAbsoluteOffsetRecursive()
 	if (!absolute_offset_dirty)
 	{
 		absolute_offset_dirty = true;
+		meta->damage_bounds_cache_valid = false;
 
 		if (transform_state)
 			DirtyTransformState(true, true);
@@ -2944,6 +2954,7 @@ void Element::AdvanceAnimations()
 
 void Element::DirtyTransformState(bool perspective_dirty, bool transform_dirty)
 {
+	meta->damage_bounds_cache_valid = false;
 	AddDamageForDirty("transform", true);
 	dirty_perspective |= perspective_dirty;
 	dirty_transform |= transform_dirty;
@@ -2957,6 +2968,8 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 	Context* context = (owner_document ? owner_document->GetContext() : nullptr);
 	if (!context)
 		return;
+	if (!IsVisible(true) && !meta->last_painted_bounds_valid)
+		return;
 	const bool want_new_bounds = needs_new_bounds || !meta->last_painted_bounds_valid;
 	if (want_new_bounds)
 		context->NotifyHoverChainDirty();
@@ -2969,6 +2982,25 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 			meta->damage_needs_new_bounds = true;
 		context->RequestRender();
 		return;
+	}
+
+	if (!needs_new_bounds && meta->last_painted_bounds_valid && !context->damage_region.rects.empty())
+	{
+		const Rectanglei bounds = Rectanglei(meta->last_painted_bounds);
+		if (bounds.Valid())
+		{
+			for (const Rectanglei& existing : context->damage_region.rects)
+			{
+				if (!existing.Valid())
+					continue;
+				if (existing.Left() <= bounds.Left() && existing.Top() <= bounds.Top() && existing.Right() >= bounds.Right() &&
+					existing.Bottom() >= bounds.Bottom())
+				{
+					meta->damage_generation = context->GetDamageGeneration();
+					return;
+				}
+			}
+		}
 	}
 
 	if (!context->RegisterDirtyEvent())
@@ -2994,7 +3026,17 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 	if (want_new_bounds)
 		meta->painted_bounds_dirty = true;
 
-	auto get_current_bounds = [this](Rectanglef& out_bounds) { GetDamageBounds(out_bounds); };
+	auto get_current_bounds = [this, context](Rectanglef& out_bounds) {
+		if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+		{
+			out_bounds = meta->damage_bounds_cache;
+			return;
+		}
+		GetDamageBounds(out_bounds);
+		meta->damage_bounds_cache = out_bounds;
+		meta->damage_bounds_cache_generation = context->GetDamageGeneration();
+		meta->damage_bounds_cache_valid = true;
+	};
 
 	bool added_current = false;
 	bool added_old = false;

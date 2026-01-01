@@ -2138,7 +2138,7 @@ Element* Element::GetClosestScrollableContainer()
 
 void Element::ProcessDefaultAction(Event& event)
 {
-	if (event == EventId::Mousedown && event.GetPhase() == EventPhase::Target)
+	if (event == EventId::Mousedown)
 	{
 		const Vector2f mouse_pos(event.GetParameter("mouse_x", 0.f), event.GetParameter("mouse_y", 0.f));
 

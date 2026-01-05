@@ -99,6 +99,9 @@ public:
 	/// @param[in] region The region to be rendered. All pixels outside this region should be clipped.
 	/// @note The region should be applied in window coordinates regardless of any active transform.
 	virtual void SetScissorRegion(Rectanglei region) = 0;
+	/// Called by RmlUi to set the base scissor region for backdrop filters when the filter pass uses an extended scissor.
+	/// @param[in] region The base region (usually element border box) to be used for masking.
+	virtual void SetBackdropScissorRegion(Rectanglei region);
 
 	/**
 	    @name Optional functions for advanced rendering features.

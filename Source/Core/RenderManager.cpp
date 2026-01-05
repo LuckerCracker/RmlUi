@@ -142,6 +142,13 @@ Rectanglei RenderManager::GetScissorRegion() const
 	return state.scissor_region;
 }
 
+void RenderManager::SetBackdropScissorRegion(Rectanglei region)
+{
+	if (region.Valid())
+		region = region.Intersect(Rectanglei::FromSize(viewport_dimensions));
+	render_interface->SetBackdropScissorRegion(region);
+}
+
 void RenderManager::DisableClipMask()
 {
 	if (!state.clip_mask_list.empty())

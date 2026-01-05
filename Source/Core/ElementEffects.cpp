@@ -297,6 +297,7 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 			const Rectanglei extended_scissor_region = GetBackdropScissorRegion(true);
 			const bool needs_temp_layer = (extended_scissor_region != base_scissor_region);
 
+			render_manager->SetBackdropScissorRegion(base_scissor_region);
 			if (needs_temp_layer)
 			{
 				// We only need a temporary buffer when reading from outside the element bounds (eg. blur, drop-shadow).
@@ -319,6 +320,7 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 				render_manager->CompositeLayers(backdrop_source_layer, backdrop_destination_layer, BlendMode::Blend, filter_handles);
 				render_manager->SetScissorRegion(initial_scissor_region);
 			}
+			render_manager->SetBackdropScissorRegion(Rectanglei::MakeInvalid());
 		}
 	}
 	else if (render_stage == RenderStage::Exit)

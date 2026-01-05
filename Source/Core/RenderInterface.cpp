@@ -51,6 +51,8 @@ void RenderInterface::RenderToClipMask(ClipMaskOperation /*operation*/, Compiled
 
 void RenderInterface::SetTransform(const Matrix4f* /*transform*/) {}
 
+void RenderInterface::SetBackdropScissorRegion(Rectanglei /*region*/) {}
+
 LayerHandle RenderInterface::PushLayer()
 {
 	return {};

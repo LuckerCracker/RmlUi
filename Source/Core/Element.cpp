@@ -70,6 +70,7 @@ namespace Rml {
 
 // Determines how many levels up in the hierarchy the OnChildAdd and OnChildRemove are called (starting at the child itself)
 static constexpr int ChildNotifyLevels = 2;
+static constexpr uint32_t DamageBoundsCacheFrameTtl = 2;
 
 // Helper function to select scroll offset delta
 static float GetScrollOffsetDelta(ScrollAlignment alignment, float begin_offset, float end_offset)
@@ -226,6 +227,17 @@ void Element::Render()
 #ifdef RMLUI_TRACY_PROFILING
 	RMLUI_ZoneScoped;
 #endif
+	if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
+	{
+		if (!context->IsFullRedrawPending())
+		{
+			const uint64_t generation = context->GetDamageGeneration();
+			const bool subtree_dirty = (meta->damage_subtree_generation == generation);
+			const bool self_dirty = (meta->damage_generation == generation) || meta->painted_bounds_dirty || meta->damage_needs_new_bounds;
+			if (!subtree_dirty && !self_dirty)
+				return;
+		}
+	}
 
 	UpdateAbsoluteOffsetAndRenderBoxData();
 
@@ -298,10 +310,35 @@ void Element::Render()
 		Rectanglef new_bounds;
 		if (Context* context = (owner_document ? owner_document->GetContext() : nullptr))
 		{
-			if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
-				new_bounds = meta->damage_bounds_cache;
-			else
+			const bool allow_stale_cache = !absolute_offset_dirty && !dirty_transform && !dirty_perspective;
+			const uint32_t current_frame = context->GetRenderFrameCounter();
+			bool used_cache = false;
+
+			if (meta->damage_bounds_cache_valid)
+			{
+				if (meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+				{
+					new_bounds = meta->damage_bounds_cache;
+					used_cache = true;
+				}
+				else if (allow_stale_cache && meta->damage_bounds_cache_frame_valid &&
+					current_frame >= meta->damage_bounds_cache_frame &&
+					current_frame - meta->damage_bounds_cache_frame <= DamageBoundsCacheFrameTtl)
+				{
+					new_bounds = meta->damage_bounds_cache;
+					used_cache = true;
+				}
+			}
+
+			if (!used_cache)
+			{
 				GetDamageBounds(new_bounds);
+				meta->damage_bounds_cache = new_bounds;
+				meta->damage_bounds_cache_generation = context->GetDamageGeneration();
+				meta->damage_bounds_cache_valid = true;
+				meta->damage_bounds_cache_frame = current_frame;
+				meta->damage_bounds_cache_frame_valid = true;
+			}
 		}
 		else
 		{
@@ -2986,12 +3023,18 @@ void Element::AdvanceAnimations()
 	}
 }
 
-void Element::DirtyTransformState(bool perspective_dirty, bool transform_dirty)
+void Element::DirtyTransformStateInternal(bool perspective_dirty, bool transform_dirty, bool from_parent)
 {
 	meta->damage_bounds_cache_valid = false;
-	AddDamageForDirty("transform", true);
+	if (!from_parent)
+		AddDamageForDirty("transform", true);
 	dirty_perspective |= perspective_dirty;
 	dirty_transform |= transform_dirty;
+}
+
+void Element::DirtyTransformState(bool perspective_dirty, bool transform_dirty)
+{
+	DirtyTransformStateInternal(perspective_dirty, transform_dirty, false);
 }
 
 void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
@@ -3004,6 +3047,15 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		return;
 	if (!IsVisible(true) && !meta->last_painted_bounds_valid)
 		return;
+
+	const uint64_t generation = context->GetDamageGeneration();
+	for (Element* node = this; node; node = node->GetParentNode())
+	{
+		if (node->meta->damage_subtree_generation == generation)
+			break;
+		node->meta->damage_subtree_generation = generation;
+	}
+
 	const bool want_new_bounds = needs_new_bounds || !meta->last_painted_bounds_valid;
 	if (want_new_bounds)
 		context->NotifyHoverChainDirty();
@@ -3062,16 +3114,29 @@ void Element::AddDamageForDirty(const char* reason, bool needs_new_bounds)
 		}
 	}
 
-	auto get_current_bounds = [this, context](Rectanglef& out_bounds) {
-		if (meta->damage_bounds_cache_valid && meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+	const bool allow_stale_cache = !needs_new_bounds && !absolute_offset_dirty && !dirty_transform && !dirty_perspective;
+	auto get_current_bounds = [this, context, allow_stale_cache](Rectanglef& out_bounds) {
+		const uint32_t current_frame = context->GetRenderFrameCounter();
+		if (meta->damage_bounds_cache_valid)
 		{
-			out_bounds = meta->damage_bounds_cache;
-			return;
+			if (meta->damage_bounds_cache_generation == context->GetDamageGeneration())
+			{
+				out_bounds = meta->damage_bounds_cache;
+				return;
+			}
+			if (allow_stale_cache && meta->damage_bounds_cache_frame_valid && current_frame >= meta->damage_bounds_cache_frame &&
+				current_frame - meta->damage_bounds_cache_frame <= DamageBoundsCacheFrameTtl)
+			{
+				out_bounds = meta->damage_bounds_cache;
+				return;
+			}
 		}
 		GetDamageBounds(out_bounds);
 		meta->damage_bounds_cache = out_bounds;
 		meta->damage_bounds_cache_generation = context->GetDamageGeneration();
 		meta->damage_bounds_cache_valid = true;
+		meta->damage_bounds_cache_frame = current_frame;
+		meta->damage_bounds_cache_frame_valid = true;
 	};
 
 	if (!context->RegisterDirtyEvent())
@@ -3288,7 +3353,7 @@ void Element::UpdateTransformState()
 	if (perspective_or_transform_changed)
 	{
 		for (size_t i = 0; i < children.size(); i++)
-			children[i]->DirtyTransformState(false, true);
+			children[i]->DirtyTransformStateInternal(false, true, true);
 	}
 
 	// No reason to keep the transform state around if transform and perspective have been removed.

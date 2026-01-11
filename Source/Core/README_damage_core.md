@@ -16,13 +16,12 @@ Context exposes:
 - `SetForceFullRedraw(bool)` / `RequestFullRedraw()`
 - `ClearRenderRequests()`
 - `GetDamageRegion()` / `TakeDamageRegion()`
-- debug: `GetDebugDamageRects()`, `GetDamageAreaPercent()`, `GetDamageFullRedrawSuggested()`
+- debug: `GetDebugDamageRects()`, `GetDamageAreaPercent()`
 
 Damage region settings:
 
 - `SetDamageMergeDistance(int)`
 - `SetDamageMaxRects(size_t)`
-- `SetDamageFullRedrawThresholds(float area_percent, size_t rect_count)`
 
 ## What adds damage
 
@@ -58,19 +57,9 @@ Global/full redraw triggers:
 
 ## Merge policy and full redraw heuristics
 
-Damage rects are merged on insertion:
-
-- `MergeOverlaps(max_rects, merge_distance_px)`
-- default `merge_distance_px = 2`
-- default `max_rects = 32`
-
-Full redraw is suggested when:
-
-- area% >= `damage_full_redraw_area_percent` (default 60%)
-- or rect count >= `damage_full_redraw_rect_count` (default 64)
-
-This is a suggestion; Core does not force it unless explicitly requested by
-`RequestFullRedraw()` or other global triggers.
+Damage rects are unioned on insertion into a single rectangle. Full redraws are
+only requested through explicit calls (eg. `RequestFullRedraw()`), or global
+triggers like context resize.
 
 ## Notes
 

@@ -685,6 +685,7 @@ protected:
 	void Release() override;
 
 private:
+	void DirtyTransformStateInternal(bool perspective_dirty, bool transform_dirty, bool from_parent);
 	void SetParent(Element* parent);
 
 	void SetDataModel(DataModel* new_data_model);

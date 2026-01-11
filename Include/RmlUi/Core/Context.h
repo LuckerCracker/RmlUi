@@ -118,21 +118,14 @@ public:
 	/// Returns last computed damage area percent.
 	float GetDamageAreaPercent() const;
 	/// Returns suggested full redraw based on thresholds.
-	bool GetDamageFullRedrawSuggested() const;
 	/// Sets the damage merge distance in pixels.
 	void SetDamageMergeDistance(int distance_px);
 	/// Sets the maximum number of damage rects before collapsing.
 	void SetDamageMaxRects(size_t max_rects);
-	/// Sets thresholds for suggesting full redraw.
-	void SetDamageFullRedrawThresholds(float area_percent, size_t rect_count);
 	/// Returns the damage merge distance in pixels.
 	int GetDamageMergeDistance() const;
 	/// Returns the maximum number of damage rects before collapsing.
 	size_t GetDamageMaxRects() const;
-	/// Returns the full redraw area threshold in percent.
-	float GetDamageFullRedrawAreaThreshold() const;
-	/// Returns the full redraw rect count threshold.
-	size_t GetDamageFullRedrawRectThreshold() const;
 
 	/// Creates a new, empty document and places it into this context.
 	/// @param[in] instancer_name The name of the instancer used to create the document.
@@ -390,6 +383,7 @@ private:
 	bool IsDescendantOfScrollDamageContainer(const Element* element) const;
 	void FinalizeDamageRegion();
 	uint64_t GetDamageGeneration() const;
+	uint32_t GetRenderFrameCounter() const;
 	bool IsFullRedrawPending() const;
 	bool IsAnimationActive() const;
 	uint64_t GetPaintedBoundsGeneration() const;
@@ -444,6 +438,7 @@ private:
 	bool animations_active_previous = false;
 	bool full_redraw_once_per_frame = false;
 	double current_update_time = 0.0;
+	uint32_t render_frame_counter = 0;
 
 	// The current state of Touches, required to implement proper inertia scrolling.
 	struct TouchState {
@@ -505,9 +500,7 @@ private:
 	Vector<Element*> scroll_damage_containers;
 	uint64_t scroll_damage_generation = 0;
 	int damage_merge_distance_px = 2;
-	size_t damage_max_rects = 32;
-	float damage_full_redraw_area_percent = 60.f;
-	size_t damage_full_redraw_rect_count = 64;
+	size_t damage_max_rects = 256;
 	bool damage_merge_pending = false;
 
 	// Internal callback for when an element is detached or removed from the hierarchy.

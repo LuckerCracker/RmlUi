@@ -130,7 +130,6 @@ private:
 	static constexpr float damage_overlay_hold_seconds = 1.0f;
 	struct DamageOverlayFrame {
 		Vector<Rectanglei> rects;
-		bool full_redraw = false;
 		float time_left = 0.f;
 	};
 	Vector<DamageOverlayFrame> damage_overlay_frames;

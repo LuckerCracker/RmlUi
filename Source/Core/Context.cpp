@@ -285,6 +285,7 @@ bool Context::Update()
 bool Context::Render()
 {
 	RMLUI_ZoneScoped;
+	render_frame_counter++;
 
 #ifdef RMLUI_DEBUG_DAMAGE
 	if (debug_dirty_since_render)
@@ -342,7 +343,14 @@ void Context::DamageRegion::AddRect(Rectanglei rect)
 {
 	if (!rect.Valid() || rect.Width() <= 0 || rect.Height() <= 0)
 		return;
-	rects.push_back(rect);
+	Rectanglei merged = rect;
+	for (const Rectanglei& existing : rects)
+	{
+		if (existing.Valid())
+			merged = merged.Join(existing);
+	}
+	rects.clear();
+	rects.push_back(merged);
 	last_area_percent = 0.f;
 	area_dirty = true;
 }
@@ -552,18 +560,6 @@ bool Context::RegisterDirtyEvent()
 	}
 
 	damage_dirty_event_count++;
-	size_t threshold = damage_full_redraw_rect_count;
-	if (animations_active && threshold > 0)
-	{
-		threshold = threshold / 8;
-		if (threshold < 1)
-			threshold = 1;
-	}
-	if (threshold > 0 && damage_dirty_event_count > threshold)
-	{
-		RequestFullRedraw();
-		return false;
-	}
 	return true;
 }
 
@@ -604,16 +600,14 @@ float Context::GetDamageAreaPercent() const
 	return damage_region.last_area_percent;
 }
 
-bool Context::GetDamageFullRedrawSuggested() const
-{
-	const_cast<Context*>(this)->FinalizeDamageRegion();
-	return const_cast<DamageRegion&>(damage_region)
-		.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions);
-}
-
 uint64_t Context::GetDamageGeneration() const
 {
 	return damage_generation;
+}
+
+uint32_t Context::GetRenderFrameCounter() const
+{
+	return render_frame_counter;
 }
 
 double Context::GetCurrentTime() const
@@ -643,12 +637,6 @@ void Context::SetDamageMaxRects(size_t max_rects)
 	damage_max_rects = max_rects;
 }
 
-void Context::SetDamageFullRedrawThresholds(float area_percent, size_t rect_count)
-{
-	damage_full_redraw_area_percent = Math::Clamp(area_percent, 0.f, 100.f);
-	damage_full_redraw_rect_count = rect_count;
-}
-
 int Context::GetDamageMergeDistance() const
 {
 	return damage_merge_distance_px;
@@ -657,16 +645,6 @@ int Context::GetDamageMergeDistance() const
 size_t Context::GetDamageMaxRects() const
 {
 	return damage_max_rects;
-}
-
-float Context::GetDamageFullRedrawAreaThreshold() const
-{
-	return damage_full_redraw_area_percent;
-}
-
-size_t Context::GetDamageFullRedrawRectThreshold() const
-{
-	return damage_full_redraw_rect_count;
 }
 
 bool Context::AddDamageRect(Rectanglei rect, const Element* element, const char* reason)
@@ -686,40 +664,15 @@ bool Context::AddDamageRect(Rectanglei rect, const Element* element, const char*
 		return false;
 
 	damage_region.AddRect(rect);
+	damage_merge_pending = false;
 	RequestRender();
-
-	if (damage_region.rects.size() > damage_full_redraw_rect_count)
-	{
-		force_full_redraw = true;
-		damage_region.Clear();
-		damage_merge_pending = false;
-		damage_region.AddRect(Rectanglei::FromSize(dimensions));
-		return true;
-	}
-
-	if (damage_merge_distance_px >= 0 && damage_region.rects.size() > damage_max_rects)
-	{
-		damage_merge_pending = true;
-		if (damage_full_redraw_area_percent < 100.f &&
-			damage_region.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions))
-		{
-			force_full_redraw = true;
-			damage_region.Clear();
-			damage_merge_pending = false;
-			damage_region.AddRect(Rectanglei::FromSize(dimensions));
-			return true;
-		}
-	}
 
 #ifdef RMLUI_DEBUG_DAMAGE
 	const String element_address = element ? element->GetAddress() : String("<null>");
 	Log::Message(Log::LT_DEBUG, "[damage] DamageAdd: reason=%s element=%s rect=(%d,%d)-(%d,%d)", reason, element_address.c_str(), rect.Left(),
 		rect.Top(), rect.Right(), rect.Bottom());
 	const float area_percent = damage_region.ComputeAreaPercent(dimensions);
-	const bool full_redraw = force_full_redraw ||
-		damage_region.ShouldFullRedraw(damage_full_redraw_area_percent, damage_full_redraw_rect_count, dimensions);
-	Log::Message(Log::LT_DEBUG, "[damage] DamageSummary: rects=%zu area%%=%.2f full_redraw=%d", damage_region.rects.size(), area_percent,
-		full_redraw ? 1 : 0);
+	Log::Message(Log::LT_DEBUG, "[damage] DamageSummary: rects=%zu area%%=%.2f", damage_region.rects.size(), area_percent);
 #endif
 
 	return true;
@@ -741,21 +694,9 @@ bool Context::AddAnimationDamageRect(Rectanglei rect, const Element* element, co
 	if (!rect.Valid() || rect.Width() <= 0 || rect.Height() <= 0)
 		return false;
 
-	animation_damage_rects.push_back(rect);
+	damage_region.AddRect(rect);
+	damage_merge_pending = false;
 	RequestRender();
-
-	if (damage_region.rects.size() + animation_damage_rects.size() > damage_full_redraw_rect_count)
-	{
-		force_full_redraw = true;
-		damage_region.Clear();
-		animation_damage_rects.clear();
-		damage_merge_pending = false;
-		damage_region.AddRect(Rectanglei::FromSize(dimensions));
-		return true;
-	}
-
-	if (damage_merge_distance_px >= 0 && (damage_region.rects.size() + animation_damage_rects.size()) > damage_max_rects)
-		damage_merge_pending = true;
 
 #ifdef RMLUI_DEBUG_DAMAGE
 	const String element_address = element ? element->GetAddress() : String("<null>");
@@ -770,15 +711,12 @@ void Context::FinalizeDamageRegion()
 {
 	if (!animation_damage_rects.empty())
 	{
-		damage_region.rects.insert(damage_region.rects.end(), animation_damage_rects.begin(), animation_damage_rects.end());
+		for (const Rectanglei& rect : animation_damage_rects)
+			damage_region.AddRect(rect);
 		animation_damage_rects.clear();
 		damage_region.area_dirty = true;
 	}
-	if (!damage_merge_pending)
-		return;
 	damage_merge_pending = false;
-	if (damage_merge_distance_px >= 0 && damage_region.rects.size() > damage_max_rects)
-		damage_region.MergeOverlaps(damage_max_rects, damage_merge_distance_px);
 }
 
 ElementDocument* Context::CreateDocument(const String& instancer_name)
